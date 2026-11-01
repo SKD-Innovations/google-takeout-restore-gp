@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-{{NONCE}}' 'unsafe-eval'; style-src 'nonce-{{NONCE}}'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Takeout Restore</title><style nonce="{{NONCE}}">{{CSS}}</style></head>
+<body><div id="app"><div class="loading">Opening Takeout Restore…</div></div><div id="notice" role="alert" aria-live="assertive" hidden></div>
+<dialog id="modal"><form method="dialog" id="modal-form"><h2 id="modal-title"></h2><div id="modal-content"></div><div class="actions"><button value="cancel" class="secondary" formnovalidate>Cancel</button><button value="ok" id="modal-ok">Continue</button></div></form></dialog>
+<dialog id="recovery-modal"><h2>Save your recovery key</h2><p>This key can reset your local password while keeping your history and saved Google sign-in. Keep it somewhere private, outside this app.</p><pre id="recovery-code" class="recovery-code"></pre><p class="tiny muted">Shown once. Anyone with this key can unlock your local account. Generate a replacement in Accounts if you lose it.</p><div class="actions"><button class="secondary" data-action="save-recovery">Save key to file</button><button data-action="close-recovery">I’ve saved my key</button></div></dialog>
+<script nonce="{{NONCE}}">{{JS}}</script></body></html>

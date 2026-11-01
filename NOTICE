@@ -1,0 +1,16 @@
+Takeout Restore
+Copyright 2026 Takeout Restore contributors
+
+Independent software; not affiliated with, sponsored by, or endorsed by Google.
+Google Photos, Google Chrome and Google Takeout are trademarks of Google LLC.
+
+This project's original code is licensed under Apache-2.0. Third-party components
+retain their own licenses. Release packaging includes notices collected from
+installed Python distributions. ExifTool is by Phil Harvey and is distributed
+under the Artistic License option. Its bundled Perl runtime retains its applicable Artistic/GPL dual-license terms. WebKitGTK and other
+Linux system libraries retain their LGPL and other upstream terms.
+
+The Playwright-selected browser is downloaded from its vendor on first setup;
+it is not part of the application installer. Its own license notices accompany
+its distribution. Windows Setup may install Microsoft's WebView2 Runtime under
+Microsoft's terms. No telemetry is added by this application.

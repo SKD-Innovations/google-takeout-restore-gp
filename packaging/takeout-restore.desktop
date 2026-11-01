@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Takeout Restore
+Comment=Restore your Google Photos Takeout export
+Exec=takeout-restore
+Icon=takeout-restore
+Terminal=false
+Categories=Utility;Graphics;

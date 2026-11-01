@@ -1,0 +1,22 @@
+{
+  "exiftool_windows": {
+    "url": "https://sourceforge.net/projects/exiftool/files/exiftool-13.60_64.zip/download",
+    "sha256": "548b1f4e0b713cd2a26824b34080c35db4e2d2edd166468eb38b1d55ada90c2e"
+  },
+  "exiftool_source": {
+    "url": "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.60.tar.gz/download",
+    "sha256": "c8e3c42576f46d862e4cd9c192989776e7363931e890c95056bcd6293e83ea36"
+  },
+  "appimagetool": {
+    "url": "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage",
+    "sha256": "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+  },
+  "appimage_runtime": {
+    "url": "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64",
+    "sha256": "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d"
+  },
+  "perl": {
+    "url": "https://www.cpan.org/src/5.0/perl-5.42.1.tar.gz",
+    "sha256": "6f84e6dc8cce97181d1c6aeeb552c13775c91ded3c6c73743c9211af87b16bf8"
+  }
+}

@@ -1,0 +1,185 @@
+name: Build desktop packages
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  build:
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release-signing' || 'unsigned-build' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            target: windows-x64
+          - os: macos-14
+            target: macos-arm64
+          - os: macos-15-intel
+            target: macos-x64
+          - os: ubuntu-22.04
+            target: linux-x64
+    runs-on: ${{ matrix.os }}
+    env:
+      SIGN_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      MAC_SIGN_IDENTITY: ${{ startsWith(github.ref, 'refs/tags/v') && vars.MAC_SIGN_IDENTITY || '' }}
+      PYTHONPATH: .
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require release commit on protected main
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth libgirepository1.0-dev libcairo2-dev gir1.2-gtk-3.0 gir1.2-webkit2-4.1 libwebkit2gtk-4.1-dev
+          python -m pip install 'PyGObject==3.50.0' 'pycairo==1.28.0'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m ruff check photorestore
+      - run: python scripts/prepare_exiftool.py
+      - name: Test with bundled ExifTool
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export TAKEOUT_DEV_EXIFTOOL="$GITHUB_WORKSPACE/photorestore/resources/exiftool/exiftool.exe"
+          else
+            export TAKEOUT_DEV_EXIFTOOL="$GITHUB_WORKSPACE/photorestore/resources/exiftool/exiftool"
+          fi
+          python -m pytest -q
+      - name: Verify and bundle WebView2 bootstrapper
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/prepare_webview2.ps1
+      - run: python scripts/prepare_browser.py
+      - name: Verify browser component offline
+        run: python scripts/browser_component_smoke.py
+      - name: Check original Chrome CDP flow (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python scripts/chrome_flow_smoke.py
+      - name: Check original Chrome CDP flow (macOS and Windows)
+        if: runner.os != 'Linux'
+        run: python scripts/chrome_flow_smoke.py
+      - name: Import Developer ID into temporary keychain
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          MAC_CERTIFICATE_P12_BASE64: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+        run: python scripts/sign_macos.py setup
+      - run: python scripts/collect_licenses.py
+      - run: python -m PyInstaller --noconfirm packaging/TakeoutRestore.spec
+      - name: Check packaged macOS runtime offline
+        if: runner.os == 'macOS'
+        run: '"dist/Takeout Restore.app/Contents/MacOS/TakeoutRestore" --self-test'
+      - name: Check packaged Linux runtime offline
+        if: runner.os == 'Linux'
+        run: xvfb-run -a dist/TakeoutRestore/TakeoutRestore --self-test
+      - name: Check packaged Windows runtime offline
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath 'dist/TakeoutRestore/TakeoutRestore.exe' -ArgumentList '--self-test' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw 'Packaged self-test failed' }
+      - name: Verify macOS signature
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        run: codesign --verify --deep --strict --verbose=2 'dist/Takeout Restore.app'
+      - name: Create macOS DMG and portable app
+        if: runner.os == 'macOS'
+        run: python scripts/package_macos.py --target '${{ matrix.target }}'
+      - name: Notarize and staple macOS DMG
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: python scripts/sign_macos.py notarize 'dist/TakeoutRestore-0.1.5-${{ matrix.target }}-preview.dmg'
+      - name: Azure OIDC login
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign Windows executable files
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        uses: azure/trusted-signing-action@0d74250c661747df006298d0fb49944c10f16e03 # v0.5.1
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist\TakeoutRestore
+          files-folder-filter: exe,dll,pyd
+          files-folder-recurse: true
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+      - name: Create Windows installer and portable ZIP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' packaging/windows.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          Compress-Archive -Path dist/TakeoutRestore -DestinationPath dist/TakeoutRestore-windows-x64-portable.zip
+      - name: Sign Windows installer
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        uses: azure/trusted-signing-action@0d74250c661747df006298d0fb49944c10f16e03 # v0.5.1
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist\installers
+          files-folder-filter: exe
+          exclude-environment-credential: true
+          exclude-managed-identity-credential: true
+          exclude-azure-cli-credential: false
+      - name: Create Linux packages
+        if: runner.os == 'Linux'
+        run: python scripts/package_linux.py
+      - run: python scripts/checksums.py
+      - name: Generate provenance for release packages
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/*.dmg
+            dist/*.deb
+            dist/*.AppImage
+            dist/*.tar.gz
+            dist/installers/*-setup.exe
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: TakeoutRestore-${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            dist/*.zip
+            dist/*.dmg
+            dist/*.deb
+            dist/*.AppImage
+            dist/*.tar.gz
+            dist/installers/*-setup.exe
+            dist/SHA256SUMS
+            photorestore/resources/browser.json
+      - name: Remove signing keychain and temporary private keys
+        if: always() && runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        run: python scripts/sign_macos.py cleanup
