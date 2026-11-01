@@ -5,6 +5,7 @@ import math
 import os
 import re
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from .errors import AppError
@@ -151,13 +152,41 @@ def exiftool_command(tool):
     return [str(tool)]
 
 
+def exiftool_input(arguments):
+    """Encode a line-based argument list; text metadata is loaded from a separate file."""
+    if any(any(char in argument for char in ("\x00", "\r", "\n")) for argument in arguments):
+        raise ValueError("Control characters are not supported in an ExifTool argument file")
+    return ("\n".join(arguments) + "\n").encode("utf-8")
+
+
+def run_exiftool(tool, arguments, *, timeout=60, check=True):
+    # -config must be first and outside the argfile. UTF-8 stdin bypasses Windows'
+    # legacy argv code page, including for Unicode filenames and long arguments.
+    command = [*exiftool_command(tool), "-config", "", "-charset", "UTF8", "-charset", "filename=UTF8"]
+    if os.name != "nt" and any("\r" in arg or "\n" in arg for arg in arguments):
+        # POSIX permits newlines in filenames. Native argv preserves those filenames
+        # as single arguments; they cannot be represented as plain argfile lines.
+        command += arguments
+        payload = None
+    else:
+        command += ["-@", "-"]
+        payload = exiftool_input(arguments)
+    return subprocess.run(  # noqa: S603 -- trusted tool, no shell, metadata is not executed
+        command,
+        input=payload,
+        capture_output=True,
+        timeout=timeout,
+        check=check,
+        env=clean_environment(),
+    )
+
+
 def apply_metadata(tool: Path, staged: Path, meta, descriptions=True):
     if not meta:
         return
     if not tool.is_file():
         raise AppError("GPP-303")
-    # -config must be first: do not execute a user-provided ExifTool config.
-    args = [*exiftool_command(tool), "-config", "", "-overwrite_original", "-P", "-api", "QuickTimeUTC=1"]
+    args = ["-overwrite_original", "-P", "-api", "QuickTimeUTC=1"]
     tags = []
     if meta.get("taken"):
         dt = datetime.fromisoformat(meta["taken"]).astimezone(timezone.utc)
@@ -191,58 +220,59 @@ def apply_metadata(tool: Path, staged: Path, meta, descriptions=True):
         ]
         if staged.suffix.lower() in VIDEOS:
             tags += [f"-Keys:GPSCoordinates={lat:+.7f}{lon:+.7f}{alt:+.2f}/"]
-    if descriptions and meta.get("description"):
-        tags += [f"-XMP:Description={meta['description']}"]
-        if staged.suffix.lower() in {".jpg", ".jpeg", ".tif", ".tiff"}:
-            tags += [f"-EXIF:ImageDescription={meta['description']}"]
-    if not tags:
+    description = meta.get("description") if descriptions else None
+    if not tags and not description:
         return
     try:
-        result = subprocess.run(  # noqa: S603 -- trusted bundled executable, argument vector
-            args + tags + [str(staged.resolve())],
-            capture_output=True,  # noqa: S603 -- trusted bundled executable, argument vector
-            timeout=600,
-            check=False,
-            env=clean_environment(),
-        )  # noqa: S603
-        if result.returncode or b"1 image files updated" not in result.stdout:
-            raise AppError("GPP-302")
-        # Read back requested dates/descriptions. A successful subprocess alone is insufficient.
-        readback = subprocess.run(  # noqa: S603 -- trusted bundled executable, argument vector
-            [
-                *exiftool_command(tool),
-                "-config",
-                "",
-                "-j",
-                "-n",
-                "-api",
-                "QuickTimeUTC=1",  # noqa: S603
-                "-DateTimeOriginal",
-                "-CreateDate",
-                "-Description",
-                "-GPSLatitude",
-                "-GPSLongitude",
-                "-GPSAltitude",
-                "-GPSCoordinates",
-                str(staged.resolve()),
-            ],
-            capture_output=True,
-            timeout=60,
-            check=True,
-            env=clean_environment(),
-        )  # noqa: S603
-        actual = json.loads(readback.stdout)[0]
-        if meta.get("taken") and not any(
-            str(actual.get(k, "")).startswith(date) for k in ("DateTimeOriginal", "CreateDate")
-        ):
-            raise AppError("GPP-302")
-        if geo and staged.suffix.lower() not in VIDEOS:
-            if any(
-                abs(float(actual.get(tag, 999)) - geo[key]) > 0.0001
-                for tag, key in [("GPSLatitude", "lat"), ("GPSLongitude", "lon"), ("GPSAltitude", "alt")]
+        # A private UTF-8 value file preserves multiline text and literal symbols.
+        # Description text never becomes argfile options or shell/Perl expressions.
+        with tempfile.TemporaryDirectory(dir=staged.parent, prefix=".takeout-metadata-") as temporary:
+            if description:
+                value_file = Path(temporary) / "description.txt"
+                value_file.write_bytes(description.encode("utf-8"))
+                tags.append(f"-XMP:Description<={value_file.resolve()}")
+                if staged.suffix.lower() in {".jpg", ".jpeg", ".tif", ".tiff"}:
+                    tags.append(f"-EXIF:ImageDescription<={value_file.resolve()}")
+            result = run_exiftool(
+                tool,
+                args + tags + [str(staged.resolve())],
+                timeout=600,
+                check=False,
+            )
+            if result.returncode or b"1 image files updated" not in result.stdout:
+                raise AppError("GPP-302")
+            # Read back requested dates/descriptions. A successful subprocess alone is insufficient.
+            readback = run_exiftool(
+                tool,
+                [
+                    "-j",
+                    "-n",
+                    "-api",
+                    "QuickTimeUTC=1",
+                    "-DateTimeOriginal",
+                    "-CreateDate",
+                    "-Description",
+                    "-GPSLatitude",
+                    "-GPSLongitude",
+                    "-GPSAltitude",
+                    "-GPSCoordinates",
+                    str(staged.resolve()),
+                ],
+                timeout=60,
+                check=True,
+            )
+            actual = json.loads(readback.stdout)[0]
+            if meta.get("taken") and not any(
+                str(actual.get(k, "")).startswith(date) for k in ("DateTimeOriginal", "CreateDate")
             ):
                 raise AppError("GPP-302")
-        if descriptions and meta.get("description") and actual.get("Description") != meta["description"]:
-            raise AppError("GPP-302")
+            if geo and staged.suffix.lower() not in VIDEOS:
+                if any(
+                    abs(float(actual.get(tag, 999)) - geo[key]) > 0.0001
+                    for tag, key in [("GPSLatitude", "lat"), ("GPSLongitude", "lon"), ("GPSAltitude", "alt")]
+                ):
+                    raise AppError("GPP-302")
+            if descriptions and meta.get("description") and actual.get("Description") != meta["description"]:
+                raise AppError("GPP-302")
     except (OSError, subprocess.SubprocessError, ValueError, IndexError, AttributeError, KeyError) as exc:
         raise AppError("GPP-302") from exc
