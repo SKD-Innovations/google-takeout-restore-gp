@@ -5,6 +5,9 @@ merging supported metadata into temporary copies, and operating a durable upload
 queue through the Google Photos website. The interface has Simple and Advanced
 views and separate local user accounts.
 
+For an approachable architecture walkthrough with Mermaid flow diagrams, read the
+[developer overview](docs/DEVELOPER-OVERVIEW.md).
+
 **Status: engineering preview, not a certified or production-validated restoration tool.**
 No application can promise perfect or exactly-once restoration through an external
 website. Test a small sample and keep your independent Takeout backup.
