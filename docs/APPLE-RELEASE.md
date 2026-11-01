@@ -196,11 +196,11 @@ See [SIGNING.md](SIGNING.md) for the exact Windows/Linux settings as well. For m
 To enter base64 key material without printing it in Terminal, copy it directly to your Mac clipboard, paste into the appropriate protected GitHub secret, then clear the clipboard:
 
 ```sh
-base64 -i '/PRIVATE/PATH/developer-id.p12' | pbcopy
+base64 -i '/PRIVATE/PATH/developer-id.p12' | tr -d '\r\n' | pbcopy
 ```
 
 ```sh
-base64 -i '/PRIVATE/PATH/AuthKey_YOURKEYID.p8' | pbcopy
+base64 -i '/PRIVATE/PATH/AuthKey_YOURKEYID.p8' | tr -d '\r\n' | pbcopy
 ```
 
 After each paste, `pbcopy < /dev/null` clears the current clipboard. The encoded key is still a secret; base64 is not encryption. Clear clipboard-manager history too if you use one. Use GitHub's secret-entry UI or a secure secret provisioning system for passwords, rather than command arguments that can enter shell history.
@@ -212,24 +212,32 @@ gh workflow run build.yml --ref main
 gh run list --workflow build.yml --limit 5
 ```
 
-Test the unsigned artifacts. After the tested commit is merged into protected `main`, create the release tag deliberately:
+Test the unsigned artifacts. Update the app/package version for the next release and
+merge the tested commit into protected `main`. Replace `YOUR_NEW_VERSION_TAG` below
+with that matching, unused version tag; v0.2.1 is already published. Then create it
+deliberately:
 
 ```sh
 git switch main
 git pull --ff-only
-git tag -a v0.2.1 -m 'Takeout Restore 0.2.1'
-git push origin v0.2.1
+git tag -a YOUR_NEW_VERSION_TAG -m 'Takeout Restore release'
+git push origin YOUR_NEW_VERSION_TAG
 ```
 
 By default, the tag produces unsigned preview artifacts. Once the protected signing
 credentials for all applicable platforms are configured, explicitly request signing:
 
 ```sh
-gh workflow run build.yml --ref v0.2.1 -f sign_release=true
+gh workflow run build.yml --ref YOUR_NEW_VERSION_TAG -f sign_release=true -f signing_platform=macos
 ```
 
+Use the next reviewed version tag containing the current workflow; v0.2.1 is already
+published and its older workflow has no platform selector. Do not move published tags.
+See [the GitHub setup guide](GITHUB-ACTIONS.md) for exact credential sources and settings.
+
 Alternatively set the repository variable `RELEASE_SIGNING_ENABLED=true` to opt into
-automatic signing for future version tags. A branch cannot request signing. Review
+automatic signing for future version tags. `RELEASE_SIGNING_PLATFORMS` defaults to
+`macos`; choose `windows` or `all` only after configuring those platforms. A branch cannot request signing. Review
 and approve the release-signing environment only for the intended commit. The workflow checks the tag commit is reachable from `origin/main`, imports the P12 into a temporary keychain, builds/signs the app, signs/packages the DMG, submits with the API key, staples, checksums, and generates provenance attestations on supported GitHub plans. Private repositories skip attestations unless `ENABLE_PRIVATE_ATTESTATIONS=true` is configured. Each artifact records its signing/attestation status in `SIGNING-STATUS.json`. Temporary signing material is removed by cleanup steps.
 
 Download the completed artifacts and verify them on a clean Mac. Publishing a GitHub Release remains a separate maintainer decision; the workflow does not silently publish one. Do not create/reuse the same version tag after changing the tested source; increment version/build metadata for a revised release.

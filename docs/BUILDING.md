@@ -116,3 +116,8 @@ On Intel macOS, the package workflow builds cryptography from source with
 inside the extension instead of colliding with the Python runtime's bundled dynamic
 OpenSSL libraries. The packaged native self-test must pass before artifact upload.
 See [cryptography's build instructions](https://cryptography.io/en/latest/installation/#building-cryptography-on-macos).
+
+
+See [GITHUB-ACTIONS.md](GITHUB-ACTIONS.md) to build every platform from a Mac using
+GitHub-hosted runners, download artifacts and configure optional platform signing.
+The workflows use pinned Node 24 actions and verify Playwright's bundled Node 24 runtime.
