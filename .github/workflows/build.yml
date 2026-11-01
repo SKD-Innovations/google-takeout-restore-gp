@@ -81,7 +81,14 @@ jobs:
         run: |
           export OPENSSL_DIR="$(brew --prefix openssl@3)"
           export OPENSSL_STATIC=1
-          python -m pip install --no-binary cryptography -r requirements-dev.txt
+          python -m pip install --no-cache-dir --no-binary cryptography -r requirements-dev.txt
+          python - <<'PYCODE'
+          import subprocess
+          from cryptography.hazmat.bindings import _rust
+          dependencies = subprocess.check_output(['otool', '-L', _rust.__file__], text=True)
+          assert not any(name in dependencies for name in ('libssl.', 'libcrypto.')), dependencies
+          print('Intel cryptography uses static OpenSSL')
+          PYCODE
       - run: python -m ruff check photorestore
       - run: python scripts/prepare_exiftool.py
       - name: Test with bundled ExifTool
