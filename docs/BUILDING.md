@@ -1,8 +1,9 @@
 # Build and distribution
 
 Build on the target OS/architecture; PyInstaller is not a cross-compiler. The workflow
-matrix targets Windows x64, macOS arm64/x64 and Linux x64. No Git remote was present
-when this codebase was prepared; workflows must be run in the repository you publish.
+matrix targets Windows x64, macOS arm64/x64 and Linux x64. Workflows are available
+in the connected GitHub repository. Packages default to clearly labelled unsigned
+previews; see SIGNING.md to enable protected signing.
 
 ## Targets
 
@@ -74,9 +75,10 @@ login; small real JPG/PNG/HEIC/RAW/MOV/MP4 samples; timezone and GPS display; st
 and network-loss cases; crash at each submission boundary; multi-million-file indexing
 and disk-pressure tests; mixed-language Takeout data; vendor security/license review.
 
-**Not validated here:** live Google uploads, full real-world Takeout corpus, Windows/
-Linux binary execution, code signing/notarization with your credentials, and claimed
-minimum OS versions on clean hardware. Do not promote the preview as production-ready.
+**Additional acceptance required:** live Google uploads, a full real-world Takeout
+corpus and claimed minimum OS versions on clean hardware. Native package self-tests
+and Developer ID/notarization results belong to the exact release artifact, not to
+this guide; consult its release verification record and VALIDATION.md.
 
 On new macOS SDKs, Perl's Configure probes may detect `dup3`/`pipe2` declarations
 without the APIs existing on the deployment target. The build explicitly disables
@@ -103,7 +105,7 @@ The compiler cache is kept under `build/swift-module-cache`. Validate interactiv
 device authentication and uninstall on a disposable macOS user/account before release.
 
 
-Version 0.2.0's spec also bundles the root USAGE.md and generates resources/build.json
+The 0.2.1 spec also bundles the root USAGE.md and generates resources/build.json
 using scripts/build_identity.py. The generated fingerprint contains only allowlisted
 source/dependency inputs and target metadata, never local account data or secrets.
 See APPLE-RELEASE.md for the full Apple distribution procedure and App Store blockers.
