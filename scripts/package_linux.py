@@ -2,16 +2,18 @@
 
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 dist = root / "dist"
+version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
 package = dist / "deb-root"
 app = package / "opt/takeout-restore"
 shutil.copytree(dist / "TakeoutRestore", app, dirs_exist_ok=True)
 (package / "DEBIAN").mkdir(parents=True, exist_ok=True)
-(package / "DEBIAN/control").write_text("""Package: takeout-restore
-Version: 0.2.0
+(package / "DEBIAN/control").write_text(f"""Package: takeout-restore
+Version: {version}
 Architecture: amd64
 Maintainer: Takeout Restore maintainers
 Depends: libgtk-3-0, libwebkit2gtk-4.1-0, libgirepository-1.0-1, libnss3, libxss1, libasound2, libgbm1, libatk-bridge2.0-0, libdrm2
@@ -27,10 +29,10 @@ icons = package / "usr/share/icons/hicolor/scalable/apps"
 icons.mkdir(parents=True, exist_ok=True)
 shutil.copy(root / "packaging/icon.svg", icons / "takeout-restore.svg")
 subprocess.run(
-    ["dpkg-deb", "--build", "--root-owner-group", str(package), str(dist / "TakeoutRestore-linux-x64.deb")],
+    ["dpkg-deb", "--build", "--root-owner-group", str(package), str(dist / f"TakeoutRestore-{version}-linux-x64.deb")],
     check=True,
 )
-shutil.make_archive(str(dist / "TakeoutRestore-linux-x64-portable"), "gztar", dist, "TakeoutRestore")
+shutil.make_archive(str(dist / f"TakeoutRestore-{version}-linux-x64-portable"), "gztar", dist, "TakeoutRestore")
 # AppImage packages the same payload. The .deb is preferred on a clean Ubuntu install:
 # it resolves WebKitGTK's system dependencies through the OS package manager.
 import hashlib
@@ -76,7 +78,7 @@ subprocess.run(
         "--runtime-file",
         str(runtime),
         str(appdir),
-        str(dist / "TakeoutRestore-linux-x64.AppImage"),
+        str(dist / f"TakeoutRestore-{version}-linux-x64.AppImage"),
     ],
     check=True,
     env={**os.environ, "ARCH": "x86_64"},

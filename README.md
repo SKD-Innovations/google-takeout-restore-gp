@@ -14,6 +14,19 @@ website. Test a small sample and keep your independent Takeout backup.
 
 ![Desktop dashboard](docs/screenshots/dashboard.png)
 
+## 0.2.1 Windows metadata correction
+
+Unicode paths and descriptions now reach bundled ExifTool through UTF-8 input,
+including long and multi-line descriptions. Metadata is still read back and verified
+before an upload can proceed. The developer overview includes Mermaid diagrams of
+the app, connection, upload and support flows.
+
+Package filenames and embedded versions identify 0.2.1 across platforms. GitHub
+package builds produce unsigned previews by default; protected signing is an explicit
+option, and artifact status records distinguish signatures from checksums. See
+[signing setup](docs/SIGNING.md) and the [Mac release guide](docs/APPLE-RELEASE.md).
+
+
 ## Google sign-in: original Chrome/CDP flow (0.1.1)
 
 The app now follows the original pipeline: launch a dedicated Chrome process, let the

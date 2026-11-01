@@ -1,6 +1,6 @@
 # Takeout Restore — usage guide
 
-For version **0.2.0**. You do not need to write code, edit configuration files, or use Terminal to operate the app.
+For version **0.2.1**. You do not need to write code, edit configuration files, or use Terminal to operate the app.
 
 ## What this app does
 

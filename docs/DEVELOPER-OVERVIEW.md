@@ -1,6 +1,6 @@
 # Inside Takeout Restore: from a Takeout folder to Google Photos
 
-*A high-level developer overview of version 0.2.0.*
+*A high-level developer overview of version 0.2.1.*
 
 A Google Takeout export can contain a photo and a separate JSON file describing its date, location and other details. That extra file is called a **sidecar**. Uploading the photo alone can leave useful information behind.
 
