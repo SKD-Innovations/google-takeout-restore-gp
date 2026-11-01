@@ -122,8 +122,8 @@ team. Open **Users and Access → Integrations → App Store Connect API**. Obta
 Apple and your team policy. Download its private `.p8` key, and note its **Key ID** and
 team **Issuer ID**. Apple permits the private-key download only once. Keep it securely.
 
-This workflow supplies an Issuer ID and expects a team key; individual keys use a
-different authentication form. The API key authorizes notarization. It does not replace
+This workflow supplies an Issuer ID and expects a team key. Apple documents that
+individual API keys cannot be used with notaryTool. The API key authorizes notarization. It does not replace
 the P12 identity used to sign the application.
 
 [Apple: create App Store Connect API keys](https://developer.apple.com/documentation/AppStoreConnectAPI/creating-api-keys-for-app-store-connect-api)
