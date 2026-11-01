@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "takeout-restore"
-version = "0.2.0"
+version = "0.2.1"
 description = "A cautious, local desktop workflow for restoring Google Photos Takeout exports"
 requires-python = ">=3.12"
 license = "Apache-2.0"

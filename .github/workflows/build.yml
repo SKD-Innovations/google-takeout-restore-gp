@@ -1,13 +1,18 @@
 name: Build desktop packages
 on:
   workflow_dispatch:
+    inputs:
+      sign_release:
+        description: 'Sign a version tag using protected release-signing credentials'
+        type: boolean
+        default: false
   push:
     tags: ['v*']
 permissions:
   contents: read
 jobs:
   build:
-    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release-signing' || 'unsigned-build' }}
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && (vars.RELEASE_SIGNING_ENABLED == 'true' || inputs.sign_release == true) && 'release-signing' || 'unsigned-build' }}
     permissions:
       contents: read
       id-token: write
@@ -26,8 +31,8 @@ jobs:
             target: linux-x64
     runs-on: ${{ matrix.os }}
     env:
-      SIGN_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
-      MAC_SIGN_IDENTITY: ${{ startsWith(github.ref, 'refs/tags/v') && vars.MAC_SIGN_IDENTITY || '' }}
+      SIGN_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') && (vars.RELEASE_SIGNING_ENABLED == 'true' || inputs.sign_release == true) }}
+      MAC_SIGN_IDENTITY: ${{ startsWith(github.ref, 'refs/tags/v') && (vars.RELEASE_SIGNING_ENABLED == 'true' || inputs.sign_release == true) && vars.MAC_SIGN_IDENTITY || '' }}
       PYTHONPATH: .
       MACOSX_DEPLOYMENT_TARGET: '13.0'
     steps:
@@ -35,13 +40,32 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Reject signing from a branch
+        if: inputs.sign_release == true && !startsWith(github.ref, 'refs/tags/v')
+        run: python -c "raise SystemExit('Signed builds require a version tag; select that tag when dispatching this workflow.')"
       - name: Require release commit on protected main
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.SIGN_RELEASE == 'true'
         shell: bash
         run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
+      - name: Read and validate package version
+        id: version
+        shell: bash
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          python - <<'PY'
+          import os, re, tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version), 'Invalid package version'
+          if os.environ['SIGN_RELEASE'] == 'true':
+              assert os.environ['RELEASE_REF'] == 'refs/tags/v' + version, 'Tag/version mismatch'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('version=' + version + '\n')
+          PY
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -74,7 +98,7 @@ jobs:
         if: runner.os != 'Linux'
         run: python scripts/chrome_flow_smoke.py
       - name: Import Developer ID into temporary keychain
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        if: runner.os == 'macOS' && env.SIGN_RELEASE == 'true'
         env:
           MAC_CERTIFICATE_P12_BASE64: ${{ secrets.MAC_CERTIFICATE_P12_BASE64 }}
           MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
@@ -94,27 +118,27 @@ jobs:
           $p = Start-Process -FilePath 'dist/TakeoutRestore/TakeoutRestore.exe' -ArgumentList '--self-test' -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw 'Packaged self-test failed' }
       - name: Verify macOS signature
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        if: runner.os == 'macOS' && env.SIGN_RELEASE == 'true'
         run: codesign --verify --deep --strict --verbose=2 'dist/Takeout Restore.app'
       - name: Create macOS DMG and portable app
         if: runner.os == 'macOS'
         run: python scripts/package_macos.py --target '${{ matrix.target }}'
       - name: Notarize and staple macOS DMG
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        if: runner.os == 'macOS' && env.SIGN_RELEASE == 'true'
         env:
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: python scripts/sign_macos.py notarize 'dist/TakeoutRestore-0.2.0-${{ matrix.target }}-preview.dmg'
+        run: python scripts/sign_macos.py notarize 'dist/TakeoutRestore-${{ steps.version.outputs.version }}-${{ matrix.target }}-preview.dmg'
       - name: Azure OIDC login
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        if: runner.os == 'Windows' && env.SIGN_RELEASE == 'true'
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Sign Windows executable files
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        if: runner.os == 'Windows' && env.SIGN_RELEASE == 'true'
         uses: azure/trusted-signing-action@0d74250c661747df006298d0fb49944c10f16e03 # v0.5.1
         with:
           endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
@@ -139,9 +163,9 @@ jobs:
         run: |
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' packaging/windows.iss
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
-          Compress-Archive -Path dist/TakeoutRestore -DestinationPath dist/TakeoutRestore-windows-x64-portable.zip
+          Compress-Archive -Path dist/TakeoutRestore -DestinationPath dist/TakeoutRestore-${{ steps.version.outputs.version }}-windows-x64-portable.zip
       - name: Sign Windows installer
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        if: runner.os == 'Windows' && env.SIGN_RELEASE == 'true'
         uses: azure/trusted-signing-action@0d74250c661747df006298d0fb49944c10f16e03 # v0.5.1
         with:
           endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
@@ -157,7 +181,8 @@ jobs:
         run: python scripts/package_linux.py
       - run: python scripts/checksums.py
       - name: Generate provenance for release packages
-        if: startsWith(github.ref, 'refs/tags/v')
+        id: attest
+        if: startsWith(github.ref, 'refs/tags/v') && (github.event.repository.private == false || vars.ENABLE_PRIVATE_ATTESTATIONS == 'true')
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
@@ -167,9 +192,29 @@ jobs:
             dist/*.AppImage
             dist/*.tar.gz
             dist/installers/*-setup.exe
+      - name: Record package signing status
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE_TARGET: ${{ matrix.target }}
+          ATTESTATION_OUTCOME: ${{ steps.attest.outcome }}
+        run: |
+          python - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          signed = os.environ['SIGN_RELEASE'] == 'true'
+          target = os.environ['PACKAGE_TARGET']
+          status = 'signed' if signed and not target.startswith('linux') else 'unsigned-preview'
+          record = {'version': os.environ['PACKAGE_VERSION'], 'target': target, 'status': status,
+                    'attestation': os.environ['ATTESTATION_OUTCOME'],
+                    'note': 'CI artifacts are not published releases. Verify signatures before distributing.'}
+          Path('dist/SIGNING-STATUS.json').write_text(json.dumps(record, indent=2) + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('## Package status\n' + target + ': ' + status + '\n')
+          PYCODE
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: TakeoutRestore-${{ matrix.target }}
+          name: TakeoutRestore-${{ steps.version.outputs.version }}-${{ matrix.target }}-${{ env.SIGN_RELEASE == 'true' && runner.os != 'Linux' && 'signed' || 'preview' }}
           if-no-files-found: error
           path: |
             dist/*.zip
@@ -179,7 +224,8 @@ jobs:
             dist/*.tar.gz
             dist/installers/*-setup.exe
             dist/SHA256SUMS
+            dist/SIGNING-STATUS.json
             photorestore/resources/browser.json
       - name: Remove signing keychain and temporary private keys
-        if: always() && runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        if: always() && runner.os == 'macOS' && env.SIGN_RELEASE == 'true'
         run: python scripts/sign_macos.py cleanup

@@ -1,4 +1,4 @@
-#define AppVersion "0.2.0"
+#define AppVersion "0.2.1"
 [Setup]
 AppId={{CB0D3D6A-5DE5-4412-899C-A28D5EF52EB7}
 AppName=Takeout Restore
@@ -9,7 +9,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist\installers
-OutputBaseFilename=TakeoutRestore-windows-x64-setup
+OutputBaseFilename=TakeoutRestore-{#AppVersion}-windows-x64-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

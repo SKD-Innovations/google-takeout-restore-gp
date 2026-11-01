@@ -171,3 +171,25 @@ passed. A native Windows GitHub run
 must use a newly committed/pushed revision; re-running an old workflow run still tests
 that old commit. The Mac preview DMG built before this correction is unchanged; rebuild
 release artifacts from the corrected source before signing/publication.
+
+
+## 0.2.1 Unicode metadata and release packaging
+
+PR #1 restores lossless Windows metadata input using UTF-8 ExifTool argument files
+and private UTF-8 description files. Read-back validation remains strict. Regression
+coverage includes Unicode paths/text, multi-line and long descriptions, cleanup on
+failure, and simulated lossy Windows command-line encoding. Native Windows CI for
+that fix passed 130 tests with one POSIX-only filename test skipped; local macOS
+passed all 131 tests. PR #1's final source CI passed on Windows, Linux and macOS.
+
+Release preparation centralizes macOS/Linux package versions in pyproject.toml and
+updates the Windows installer, UI and usage guide to 0.2.1. Unsigned CI builds no
+longer require signing secrets. Signing remains opt-in, tag-restricted and fail-closed.
+Private-repository attestations require an explicit supported-plan opt-in; skipped
+attestation is recorded rather than presented as verified provenance.
+
+The final 0.2.1 local source suite passed **131 tests** with bundled ExifTool.
+Ruff, JavaScript syntax, whitespace checks and actionlint passed. The real UI/service
+smoke passed all screens at 820–1580px, recovery/export/reset, role isolation, usage,
+incident prompts, ZIP/draft handoff and disposable-data cleanup. Screenshots were
+regenerated from the 0.2.1 interface.

@@ -7,7 +7,7 @@ import json
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock
-from photorestore import macos
+from photorestore import __version__, macos
 from photorestore.errors import AppError
 import photorestore.service as service_module
 from playwright.sync_api import sync_playwright
@@ -102,7 +102,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
     page.get_by_role("button", name="Send report", exact=True).click()
     page.get_by_role("button", name="Save report & open email", exact=True).click()
     page.get_by_role("heading", name="Review your email draft", exact=True).wait_for()
-    assert destination.exists() and "0.2.0" in composer.call_args.args[0]
+    assert destination.exists() and __version__ in composer.call_args.args[0]
     assert "sarthakg043@gmail.com" in page.locator("#modal-content").inner_text()
     page.locator("#modal-ok").click()
     page.get_by_role("button", name="Help", exact=True).click()

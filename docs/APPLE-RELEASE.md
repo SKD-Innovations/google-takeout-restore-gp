@@ -1,4 +1,4 @@
-# Apple release guide — Takeout Restore 0.2.0
+# Apple release guide — Takeout Restore 0.2.1
 
 For the maintainer. End users should read [USAGE.md](../USAGE.md). This guide covers testing the DMG, signing, notarizing, secure GitHub automation, and the additional work required for a Mac App Store release.
 
@@ -10,7 +10,7 @@ Commands assume you are in the project root and use its `.venv`. Replace example
 
 **Mac App Store:** requires a separate compliant build and App Review. Signing/notarizing this DMG does not make it an App Store build, and App Store Connect does not accept this DMG as the app submission.
 
-Apple requires Mac App Store sandboxing and restricts downloading standalone applications or executable code that adds functionality. The current preview has no App Sandbox entitlement and can download/run a standalone browser. **Our assessment: 0.2.0 is not ready for Mac App Store submission.** Resolve those architectural issues before packaging a store candidate. [Apple: App Review Guidelines, especially 2.4.5 and 2.5.2](https://developer.apple.com/app-store/review/guidelines/)
+Apple requires Mac App Store sandboxing and restricts downloading standalone applications or executable code that adds functionality. The current preview has no App Sandbox entitlement and can download/run a standalone browser. **Our assessment: 0.2.1 is not ready for Mac App Store submission.** Resolve those architectural issues before packaging a store candidate. [Apple: App Review Guidelines, especially 2.4.5 and 2.5.2](https://developer.apple.com/app-store/review/guidelines/)
 
 The steps below prepare a direct-download release now. Section 10 describes the separate App Store path without presenting an unsupported signing command as a way around those requirements.
 
@@ -20,7 +20,7 @@ The steps below prepare a direct-download release now. Section 10 describes the 
 - A current compatible Xcode installation, its command-line tools, and completed first-launch setup.
 - A **Developer ID Application** certificate with its private key in your login keychain. It signs a directly distributed app and DMG; a Developer ID Installer certificate is only needed if distributing an installer PKG.
 - The current bundle identifier is `org.takeoutrestore.desktop`. Register it with your team if available. If you need an identifier you own, change the bundle metadata and identifier checks consistently before release; use `rg 'org.takeoutrestore.desktop' photorestore packaging docs` to find them.
-- App version **0.2.0** and matching package/workflow versions. An App Store candidate additionally needs a unique, increasing build number and the correct store signing/provisioning configuration.
+- App version **0.2.1** and matching package/workflow versions. An App Store candidate additionally needs a unique, increasing build number and the correct store signing/provisioning configuration.
 - Verify third-party licences, dependency updates and release notes. Confirm the public support mailbox is working and prepare an accurate privacy policy before public distribution.
 
 Inspect your tools and signing identities:
@@ -112,7 +112,7 @@ The package script signs the DMG too when `MAC_SIGN_IDENTITY` is set. Select the
 
 ```sh
 APP='dist/Takeout Restore.app'
-DMG='dist/TakeoutRestore-0.2.0-macos-arm64-preview.dmg'
+DMG='dist/TakeoutRestore-0.2.1-macos-arm64-preview.dmg'
 codesign --verify --verbose=2 "$DMG"
 hdiutil verify "$DMG"
 ```
@@ -175,7 +175,7 @@ If you will also distribute the portable ZIP, staple the original app using the 
 xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 ditto -c -k --sequesterRsrc --keepParent "$APP" \
-  'dist/TakeoutRestore-0.2.0-macos-arm64-portable.zip'
+  'dist/TakeoutRestore-0.2.1-macos-arm64-portable.zip'
 .venv/bin/python scripts/checksums.py
 ```
 
@@ -217,11 +217,20 @@ Test the unsigned artifacts. After the tested commit is merged into protected `m
 ```sh
 git switch main
 git pull --ff-only
-git tag -a v0.2.0 -m 'Takeout Restore 0.2.0'
-git push origin v0.2.0
+git tag -a v0.2.1 -m 'Takeout Restore 0.2.1'
+git push origin v0.2.1
 ```
 
-The tag triggers the release-signing environment. Review and approve the signing job only for the intended commit. The workflow checks the tag commit is reachable from `origin/main`, imports the P12 into a temporary keychain, builds/signs the app, signs/packages the DMG, submits with the API key, staples, checksums, and generates provenance attestations. Temporary signing material is removed by cleanup steps.
+By default, the tag produces unsigned preview artifacts. Once the protected signing
+credentials for all applicable platforms are configured, explicitly request signing:
+
+```sh
+gh workflow run build.yml --ref v0.2.1 -f sign_release=true
+```
+
+Alternatively set the repository variable `RELEASE_SIGNING_ENABLED=true` to opt into
+automatic signing for future version tags. A branch cannot request signing. Review
+and approve the release-signing environment only for the intended commit. The workflow checks the tag commit is reachable from `origin/main`, imports the P12 into a temporary keychain, builds/signs the app, signs/packages the DMG, submits with the API key, staples, checksums, and generates provenance attestations on supported GitHub plans. Private repositories skip attestations unless `ENABLE_PRIVATE_ATTESTATIONS=true` is configured. Each artifact records its signing/attestation status in `SIGNING-STATUS.json`. Temporary signing material is removed by cleanup steps.
 
 Download the completed artifacts and verify them on a clean Mac. Publishing a GitHub Release remains a separate maintainer decision; the workflow does not silently publish one. Do not create/reuse the same version tag after changing the tested source; increment version/build metadata for a revised release.
 
@@ -241,7 +250,7 @@ Users can compare the displayed SHA-256 to the entry for that filename in SHA256
 
 ## 10. Separate Mac App Store readiness work
 
-Do not submit 0.2.0's DMG or simply add the sandbox entitlement to its existing signing file. That would not implement sandbox-safe behavior. Before a store build:
+Do not submit 0.2.1's DMG or simply add the sandbox entitlement to its existing signing file. That would not implement sandbox-safe behavior. Before a store build:
 
 - Redesign browser provisioning/execution to meet the store rules; obtain an acceptable integration approach and test it honestly. Do not hide a download/automation path from App Review.
 - Implement and test App Sandbox access, container-based app storage and persistent access to chosen Takeout folders using security-scoped bookmarks. Re-audit child-process inheritance, network/CDP access, ExifTool, device authentication and email composition under sandboxing.
@@ -258,8 +267,8 @@ Once a compliant, separately signed store app exists, Apple's tools can package 
 productbuild \
   --sign '3rd Party Mac Developer Installer: YOUR NAME (YOURTEAMID)' \
   --component 'STORE_BUILD/Takeout Restore.app' /Applications \
-  'dist/TakeoutRestore-0.2.0-AppStore.pkg'
-pkgutil --check-signature 'dist/TakeoutRestore-0.2.0-AppStore.pkg'
+  'dist/TakeoutRestore-0.2.1-AppStore.pkg'
+pkgutil --check-signature 'dist/TakeoutRestore-0.2.1-AppStore.pkg'
 ```
 
 The app must already carry the correct Mac App Store app signature, entitlements and provisioning profile before `productbuild` signs the installer. Confirm the exact installed installer identity with `security find-identity -v`; the `-p codesigning` filter omits installer identities. [Apple: packaging Mac software](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution)

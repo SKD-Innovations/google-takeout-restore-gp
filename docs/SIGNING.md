@@ -1,7 +1,7 @@
 # Secure signing automation
 
-The workflow builds unsigned preview packages through `workflow_dispatch` and signs
-version-tag builds through a separate protected GitHub Environment. Signing credentials
+The workflow builds clearly labelled unsigned preview packages by default, including
+version tags. Signing is opt-in through a separate protected GitHub Environment. Signing credentials
 are not included in this codebase or in end-user applications.
 
 ## GitHub setup
@@ -15,7 +15,12 @@ are not included in this codebase or in end-user applications.
    moving action tags. Repository administrators remain trusted.
 5. Run unsigned builds and validate the actual packages before tagging. A version tag
    must point to a commit reachable from `origin/main`; the workflow checks this.
-6. Review the release-signing approval, then download and verify artifacts/provenance.
+6. After credentials are configured, select a version tag in `workflow_dispatch` and
+   enable `sign_release`, or set the **repository** variable `RELEASE_SIGNING_ENABLED=true`
+   to sign future version tags automatically. Branch signing requests are rejected;
+   signed tags must match the package version. A requested signing failure stops the
+   build rather than silently producing a signed-labelled unsigned package.
+7. Review the release-signing approval, then download and verify artifacts/provenance.
    Publishing a GitHub release is deliberately a separate maintainer action.
 
 ## Apple Developer ID
@@ -79,7 +84,12 @@ Microsoft documentation: https://learn.microsoft.com/en-us/azure/artifact-signin
 ## Linux and provenance
 
 The workflow generates GitHub/Sigstore build-provenance attestations with OIDC for
-version-tag artifacts and creates SHA256SUMS after signing/notarization. This is
+version-tag artifacts in public repositories and creates SHA256SUMS after
+signing/notarization. Private repositories require an eligible GitHub plan; enable
+`ENABLE_PRIVATE_ATTESTATIONS=true` as a repository variable only after confirming
+support. Otherwise attestation is skipped explicitly, without failing an otherwise
+valid package build. Each artifact includes `SIGNING-STATUS.json`; Linux packages
+remain unsigned previews unless signed separately. This is
 keyless artifact attestation, not a distribution-repository `.deb` signature. If you
 operate an apt repository, sign its Release metadata with a separately managed
 repository signing key. Do not confuse checksums alone with authentication.

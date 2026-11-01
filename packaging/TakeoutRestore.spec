@@ -3,11 +3,13 @@ import os
 import sys
 import subprocess
 import shutil
+import tomllib
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 root = Path(SPECPATH).parent
 resources = root / 'photorestore' / 'resources'
+version = tomllib.loads((root / 'pyproject.toml').read_text())['project']['version']
 if not (resources / 'browser.json').exists() or not (resources / 'exiftool.json').exists():
     raise RuntimeError('Prepare verified browser manifest and bundled ExifTool before building.')
 shutil.copyfile(root / 'USAGE.md', resources / 'USAGE.md')
@@ -53,7 +55,7 @@ if sys.platform == 'darwin':
                              'LSApplicationCategoryType':'public.app-category.photography',
                              'CFBundleSupportedPlatforms':['MacOSX'],
                              'NSHumanReadableCopyright':'Copyright 2026 Takeout Restore contributors',
-                             'CFBundleShortVersionString':'0.2.0', 'CFBundleVersion':'0.2.0', 'LSMinimumSystemVersion':'13.0',
+                             'CFBundleShortVersionString':version, 'CFBundleVersion':version, 'LSMinimumSystemVersion':'13.0',
                              'NSHighResolutionCapable':True,
                              'NSDocumentsFolderUsageDescription':'Choose extracted Takeout folders for restoration.',
                              'NSRemovableVolumesUsageDescription':'Read Takeout exports on external drives.'})

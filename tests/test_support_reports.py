@@ -11,7 +11,7 @@ import zipfile
 from unittest.mock import Mock
 from urllib.parse import parse_qs, urlsplit
 import pytest
-from photorestore import maildraft, support
+from photorestore import __version__, maildraft, support
 from photorestore.errors import AppError
 from photorestore.service import Service, StartupSupport
 from photorestore.store import Store
@@ -48,7 +48,7 @@ def test_bundle_redacts_secrets_and_identifies_build_and_observed_error(tmp_path
     )
     identity = {
         "name": "Takeout Restore",
-        "version": "0.2.0",
+        "version": __version__,
         "build_id": "a" * 64,
         "executable_sha256": "b" * 64,
     }
@@ -138,7 +138,7 @@ def test_report_requires_auth_consent_and_save_before_composer(tmp_path, monkeyp
     assert not list(tmp_path.glob(".takeout-report-*"))
     subject, body, attachment = composer.call_args.args
     assert attachment == output and output.name in body and ".takeout-report-" not in body
-    assert "0.2.0" in subject
+    assert __version__ in subject
     assert service.call("acknowledge_incident", {"incident_id": result["data"]["incident_id"]}, token)["ok"]
     with service.store.connect() as con:
         assert not con.execute("SELECT 1 FROM audit WHERE action='support.sent'").fetchone()
