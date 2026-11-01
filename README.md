@@ -5,6 +5,10 @@ merging supported metadata into temporary copies, and operating a durable upload
 queue through the Google Photos website. The interface has Simple and Advanced
 views and separate local user accounts.
 
+To build Windows, Mac and Linux packages from GitHub, or configure optional signing,
+read the [GitHub Actions setup guide](docs/GITHUB-ACTIONS.md). It includes exact settings
+and credential sources.
+
 For an approachable architecture walkthrough with Mermaid flow diagrams, read the
 [developer overview](docs/DEVELOPER-OVERVIEW.md).
 

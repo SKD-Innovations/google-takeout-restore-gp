@@ -1,5 +1,8 @@
 # Secure signing automation
 
+For click-by-click GitHub setup, credential sources and builds without signing, see
+[GITHUB-ACTIONS.md](GITHUB-ACTIONS.md).
+
 The workflow builds clearly labelled unsigned preview packages by default, including
 version tags. Signing is opt-in through a separate protected GitHub Environment. Signing credentials
 are not included in this codebase or in end-user applications.
@@ -16,8 +19,10 @@ are not included in this codebase or in end-user applications.
 5. Run unsigned builds and validate the actual packages before tagging. A version tag
    must point to a commit reachable from `origin/main`; the workflow checks this.
 6. After credentials are configured, select a version tag in `workflow_dispatch` and
-   enable `sign_release`, or set the **repository** variable `RELEASE_SIGNING_ENABLED=true`
-   to sign future version tags automatically. Branch signing requests are rejected;
+   enable `sign_release` and choose `signing_platform` (`macos`, `windows` or `all`), or set the **repository** variable `RELEASE_SIGNING_ENABLED=true`
+   to sign future version tags automatically. Set repository variable
+   `RELEASE_SIGNING_PLATFORMS` to select platforms (default `macos`); Linux remains
+   unsigned. Mac-only signing does not require Windows credentials. Branch signing requests are rejected;
    signed tags must match the package version. A requested signing failure stops the
    build rather than silently producing a signed-labelled unsigned package.
 7. Review the release-signing approval, then download and verify artifacts/provenance.
@@ -54,8 +59,8 @@ Apple documentation: https://developer.apple.com/documentation/security/notarizi
 
 ## Windows: cloud HSM signing
 
-The provided workflow uses Azure Artifact Signing (the action's historical repository
-name remains `trusted-signing-action`). Complete provider eligibility/identity checks
+The provided workflow uses Azure Artifact Signing through the current
+`azure/artifact-signing-action`. Complete provider eligibility/identity checks
 before purchasing another certificate; cloud signing and a separately purchased token
 certificate are different provisioning routes.
 
@@ -85,7 +90,7 @@ Microsoft documentation: https://learn.microsoft.com/en-us/azure/artifact-signin
 
 The workflow generates GitHub/Sigstore build-provenance attestations with OIDC for
 version-tag artifacts in public repositories and creates SHA256SUMS after
-signing/notarization. Private repositories require an eligible GitHub plan; enable
+signing/notarization. Private repositories require GitHub Enterprise Cloud; enable
 `ENABLE_PRIVATE_ATTESTATIONS=true` as a repository variable only after confirming
 support. Otherwise attestation is skipped explicitly, without failing an otherwise
 valid package build. Each artifact includes `SIGNING-STATUS.json`; Linux packages
