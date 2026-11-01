@@ -96,3 +96,29 @@ non-breaking spaces, rejection of zero/multiple-item and stale confirmations, an
 a two-item queue that commits each upload receipt before closing its completion
 card and advancing. Unrelated Close buttons are not clicked. These are offline
 fixtures; existing review records remain unchanged and need user reconciliation.
+
+## 0.1.5 layout, recovery and removal
+
+- Full local suite: **100 passed**. New coverage checks existing-account schema migration,
+  recovery key secrecy/single use/replacement/throttling, disabled accounts, unchanged
+  profile encryption keys, export authorization, preference reset scope, app roles,
+  device-auth cancellation, native confirmation cancellation, active-job refusal,
+  non-macOS password re-verification, cleanup I/O errors and symlink safety.
+- Actual embedded HTML/service smoke: all eight screens checked for document overflow
+  at 820, 960, 1180 and 1580px; a 1200-character unbroken log value and long event/path
+  tested. Export CSV, replacement recovery-key export, forgot-password reset, fresh
+  recovery-key issuance, multi-user isolation and admin-only cleanup exercised.
+- Cleanup UI tests use a temporary root and mocked OS authorization/confirmation only.
+  External test files and exported recovery files survive; all old app accounts and
+  profile/runtime content disappear. No existing user account or source media was erased.
+- Packaged macOS offline self-test checks the real native WebKit bridge and narrow-window
+  log wrapping, disposable account creation, and bundled ExifTool metadata round-trip.
+- PyInstaller includes the Swift LocalAuthentication helper as a signed Mach-O executable;
+  strict recursive bundle verification and DMG Finder-layout verification run during packaging.
+- Interactive Touch ID / macOS-password authorization and moving the actual installed
+  application to Bin are **not exercised automatically**. Those require acceptance on a
+  disposable macOS account. Native authentication/Trash boundaries are simulated in unit
+  tests. Windows/Linux package execution and Developer ID/notarization remain unverified.
+- The empty single-instance lock file is retained intentionally. OS-managed caches,
+  explicit exports, system backups, Takeout source media and Google Photos remain outside
+  app cleanup. Drag-to-Bin alone does not invoke cleanup; use Settings → Uninstall.
