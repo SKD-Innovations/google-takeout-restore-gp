@@ -85,3 +85,11 @@ operate an apt repository, sign its Release metadata with a separately managed
 repository signing key. Do not confuse checksums alone with authentication.
 
 GitHub documentation: https://docs.github.com/en/actions/concepts/security/artifact-attestations
+
+
+For copyable local macOS commands and a complete testing → signing → notarization →
+publishing sequence, see [APPLE-RELEASE.md](APPLE-RELEASE.md). It also explains why the
+current direct-download build needs architecture changes before Mac App Store review.
+The packager signs the outer DMG when MAC_SIGN_IDENTITY is set. The CI portable ZIP is
+not automatically rebuilt with a stapled app; follow the guide before promoting it as
+an offline-ready primary distribution.

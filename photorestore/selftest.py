@@ -12,6 +12,7 @@ def run():
     from .metadata import apply_metadata, normalize
     from .runtime import Runtime, exiftool_path
     from .service import Service
+    from .support import app_identity
 
     with tempfile.TemporaryDirectory(prefix="takeout-selftest-") as tmp:
         folder = Path(tmp)
@@ -30,6 +31,12 @@ def run():
             ),
         )
         service = Service(folder / "app-data")
+        identity = app_identity()
+        if not identity["build_id"] or not identity["executable_sha256"]:
+            raise RuntimeError("Packaged build identity is missing")
+        guide = service.call("usage_guide")["data"]
+        if "Keep that Chrome window open" not in guide:
+            raise RuntimeError("Packaged usage guide is missing")
         result = []
 
         class Bridge:
@@ -66,11 +73,12 @@ def run():
                         service.store.audit(
                             con, service.session.user_id, "layout.test", {"detail": "x" * 2000}
                         )
+                    service.capture_incident("GPP-901", "test_google", RuntimeError("offline test only"))
                     done.clear()
                     window.evaluate_js(
-                        "page='logs';refresh().then(()=>({layout:document.documentElement.scrollWidth"
+                        "page='logs';refresh().then(()=>new Promise(resolve=>setTimeout(()=>resolve({layout:document.documentElement.scrollWidth"
                         "<=document.documentElement.clientWidth && [...document.querySelectorAll('.audit-detail')]"
-                        ".every(el=>el.scrollWidth<=el.clientWidth)}))",
+                        ".every(el=>el.scrollWidth<=el.clientWidth),incident_prompt:document.querySelector('#incident-modal').open}),100)))",
                         callback,
                     )
                     if not done.wait(20):
@@ -84,11 +92,18 @@ def run():
         service.logout()
         if not result or result[0].get("ok") is not True or result[0].get("role") != "admin":
             raise RuntimeError("Packaged native bridge self-test failed")
-        if len(result) != 2 or result[1].get("layout") is not True:
+        if (
+            len(result) != 2
+            or result[1].get("layout") is not True
+            or result[1].get("incident_prompt") is not True
+        ):
             raise RuntimeError("Packaged native layout self-test failed")
     return {
         "native_bridge": "passed",
         "accounts": "passed",
         "bundled_exiftool": "passed",
         "native_layout": "passed",
+        "incident_prompt": "passed",
+        "build_identity": "passed",
+        "usage_guide": "passed",
     }

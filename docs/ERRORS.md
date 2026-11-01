@@ -14,6 +14,7 @@
 | GPP-110 | Device verification required | Device verification was cancelled or unavailable. Nothing was removed. |
 | GPP-111 | Cleanup incomplete | Some local files could not be removed. Close the dedicated Chrome window and retry. Your source files and Google Photos were not changed. |
 | GPP-112 | Uninstall unavailable | Run the installed app from Applications to uninstall it. On Windows or Linux, clear app data here, then use your operating system’s app manager. |
+| GPP-113 | Report could not be saved | Choose a writable location with free space and try again. Nothing was emailed. |
 | GPP-201 | Source unavailable | Reconnect the source drive and check that the folder is readable. |
 | GPP-202 | Source changed | This file changed after scanning. Scan the folder again before uploading. |
 | GPP-203 | File exceeds limits | This item exceeds the configured Google Photos size or pixel limit. |

@@ -122,3 +122,52 @@ fixtures; existing review records remain unchanged and need user reconciliation.
 - The empty single-instance lock file is retained intentionally. OS-managed caches,
   explicit exports, system backups, Takeout source media and Google Photos remain outside
   app cleanup. Drag-to-Bin alone does not invoke cleanup; use Settings → Uninstall.
+
+## 0.2.0 usage, incident reporting and release documentation
+
+- Full local suite: **114 passed**. New tests cover consent/save cancellation before any
+  mail handoff; redaction of paths, filenames, exception text and credentials; ZIP and
+  app identity hashes; persisted user-isolated incidents; acknowledgement and duplicate
+  suppression; broken-database reporting; startup reports without account-store access;
+  invalid export destinations; correctly encoded mailto drafts; native macOS compose-only
+  service arguments; profile schema migration; deterministic source fingerprints.
+- UI smoke passed with actual embedded HTML and Service against disposable accounts at
+  820, 960, 1180 and 1580px. It exercises the bundled usage guide, Send report/Not now,
+  ZIP creation, a mocked native email handoff, unexpected-error prompting, CSV export,
+  explicit Keep Chrome open instructions, recovery, role isolation and cleanup.
+- Packaged Apple Silicon app's offline native self-test passed: WebKit bridge and narrow
+  log layout, actual incident dialog, bundled usage guide, generated build fingerprint,
+  installed launcher SHA-256, disposable account creation and bundled ExifTool round-trip.
+- Strict recursive ad-hoc signature verification passed. Packaging verifies the DMG's
+  mounted application signature and Finder layout. This preview has not been signed with
+  the maintainer's Developer ID, submitted for notarization, or uploaded to the App Store.
+- Email apps were **not opened during automated tests**, and no report was emailed.
+  The NSSharingService arguments and URI fallback were tested with mocks. Maintainer
+  acceptance should check a real default mail client, ZIP attachment and cancellation;
+  discard the draft unless intentionally sending it.
+- USAGE.md is bundled and exposed in Help. docs/APPLE-RELEASE.md distinguishes implemented
+  Developer ID/DMG distribution from the unimplemented App Sandbox/browser changes needed
+  for App Store review, with links to Apple's current primary documentation.
+- Actual certificate signing, timestamping, notarization/stapling, Windows/Linux packages,
+  Intel execution, oldest-OS compatibility and App Store acceptance remain unverified.
+
+## Windows CI portability correction after 0.2.0 preview
+
+The supplied windows-2022 log was for the earlier 100-test source revision. It reported
+two failures: a recovery export test asserted Unix permission mode 0600 on Windows,
+and the malformed ZIP-name test used a writer that normalized backslashes before
+validation. Windows chmod exposes read/write status rather than POSIX permission bits.
+The content/authentication tests now remain active on Windows while POSIX-only mode
+assertions run on POSIX; the new support ZIP permission assertion follows the same rule.
+
+ZIP fixtures now preserve their original unsafe names across platforms. The extractor
+validates ZipInfo.orig_filename rather than the platform-normalized filename, rejecting
+backslashes and NUL bytes before normalization can hide them. A regression simulates
+Windows filename normalization on a non-Windows host, and a valid nested archive is
+still verified to extract normally. No failing security test has been disabled.
+
+Targeted checks passed (39 tests), the full local suite passed (117 tests), and Ruff
+passed. A native Windows GitHub run
+must use a newly committed/pushed revision; re-running an old workflow run still tests
+that old commit. The Mac preview DMG built before this correction is unchanged; rebuild
+release artifacts from the corrected source before signing/publication.

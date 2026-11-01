@@ -11,7 +11,7 @@ app = package / "opt/takeout-restore"
 shutil.copytree(dist / "TakeoutRestore", app, dirs_exist_ok=True)
 (package / "DEBIAN").mkdir(parents=True, exist_ok=True)
 (package / "DEBIAN/control").write_text("""Package: takeout-restore
-Version: 0.1.5
+Version: 0.2.0
 Architecture: amd64
 Maintainer: Takeout Restore maintainers
 Depends: libgtk-3-0, libwebkit2gtk-4.1-0, libgirepository-1.0-1, libnss3, libxss1, libasound2, libgbm1, libatk-bridge2.0-0, libdrm2

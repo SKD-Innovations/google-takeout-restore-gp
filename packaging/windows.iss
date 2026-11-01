@@ -1,4 +1,4 @@
-#define AppVersion "0.1.5"
+#define AppVersion "0.2.0"
 [Setup]
 AppId={{CB0D3D6A-5DE5-4412-899C-A28D5EF52EB7}
 AppName=Takeout Restore

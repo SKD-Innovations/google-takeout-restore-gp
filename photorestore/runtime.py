@@ -34,8 +34,11 @@ def safe_extract(archive, target, max_bytes=8 * 1024**3):
     links = []
     with zipfile.ZipFile(archive) as z:
         for info in z.infolist():
-            name = PurePosixPath(info.filename)
-            if name.is_absolute() or ".." in name.parts or "\\" in info.filename or ":" in info.filename:
+            # ZipInfo.filename normalizes backslashes on Windows and truncates NULs.
+            # Validate the original archive name before either transformation can hide it.
+            raw_name = info.orig_filename
+            name = PurePosixPath(raw_name)
+            if name.is_absolute() or ".." in name.parts or any(c in raw_name for c in ("\\", ":", "\x00")):
                 raise AppError("GPP-406")
             dest = target.joinpath(*name.parts)
             if not dest.resolve().is_relative_to(target.resolve()):

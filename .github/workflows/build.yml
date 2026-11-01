@@ -105,7 +105,7 @@ jobs:
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: python scripts/sign_macos.py notarize 'dist/TakeoutRestore-0.1.5-${{ matrix.target }}-preview.dmg'
+        run: python scripts/sign_macos.py notarize 'dist/TakeoutRestore-0.2.0-${{ matrix.target }}-preview.dmg'
       - name: Azure OIDC login
         if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2

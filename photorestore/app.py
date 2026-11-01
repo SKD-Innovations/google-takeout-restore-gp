@@ -1,4 +1,3 @@
-import html
 import multiprocessing
 import os
 import secrets
@@ -6,7 +5,7 @@ import sys
 from pathlib import Path
 from filelock import FileLock, Timeout
 from platformdirs import user_data_path
-from .service import Service
+from .service import Service, StartupSupport
 from .errors import AppError
 from .macos import register_installed_app
 from .diagnostics import log_event, logger_for
@@ -65,9 +64,13 @@ def main():
                 startup_logger, "mac.registration.refreshed" if registered else "mac.registration.unavailable"
             )
 
+        service = None
+
         def crash_hook(kind, value, tb):
             # Clear all data closes log handles; recreate the private logger if needed.
             log_event(logger_for(root / "logs"), "application.crash", "GPP-901", value)
+            if isinstance(service, Service):
+                service.capture_incident("GPP-901", "application_crash", value)
 
         sys.excepthook = crash_hook
         try:
@@ -75,13 +78,20 @@ def main():
         except Exception as exc:
             detail = exc.public() if isinstance(exc, AppError) else AppError("GPP-501").public()
             log_event(startup_logger, "startup.error", detail["code"], exc)
-            webview.create_window(
+            startup_support = StartupSupport(root, detail["code"], exc)
+
+            class StartupBridge:
+                def request(self, action, params=None, token=None):
+                    return startup_support.call(action, params, token)
+
+            startup_support.window = webview.create_window(
                 "Takeout Restore",
-                html=f"<h2>{html.escape(detail['title'])}</h2><p>{html.escape(detail['code'])}: {html.escape(detail['message'])}</p>",
-                width=550,
-                height=240,
+                html=build_html(),
+                js_api=StartupBridge(),
+                width=820,
+                height=620,
             )
-            webview.start()
+            webview.start(debug=False, private_mode=True)
             return
 
         class Bridge:

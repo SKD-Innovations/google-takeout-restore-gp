@@ -1,4 +1,3 @@
-import json
 import zipfile
 import pytest
 from photorestore.errors import AppError
@@ -7,16 +6,56 @@ from photorestore.diagnostics import diagnostics_bundle, export_report, logger_f
 
 
 @pytest.mark.parametrize(
-    "filename", ["../escape", "/absolute", "C:/escape", "nested/../../escape", "dir\\escape"]
+    "filename",
+    ["../escape", "/absolute", "C:/escape", "nested/../../escape", "dir\\escape", "safe\x00hidden"],
 )
 def test_zip_traversal_rejected(tmp_path, filename):
     archive = tmp_path / "bad.zip"
     with zipfile.ZipFile(archive, "w") as z:
-        z.writestr(filename, "bad")
+        # Bypass ZipInfo's host-dependent filename normalization in this malicious fixture.
+        info = zipfile.ZipInfo("placeholder")
+        info.filename = info.orig_filename = filename
+        z.writestr(info, "bad")
+    with zipfile.ZipFile(archive) as z:
+        assert z.infolist()[0].orig_filename == filename
     dest = tmp_path / "out"
     dest.mkdir()
     with pytest.raises(AppError, match="GPP-406"):
         safe_extract(archive, dest)
+    assert not list(dest.iterdir())
+
+
+def test_original_zip_name_checked_after_windows_style_normalization(tmp_path, monkeypatch):
+    """Reproduce Windows ZipInfo.filename sanitization even on a Unix test host."""
+    archive = tmp_path / "normalized.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("dir/escape", "bad")
+    original = zipfile.ZipFile.infolist
+
+    def windows_names(z):
+        infos = original(z)
+        for info in infos:
+            info.orig_filename = "dir\\escape"
+            assert info.filename == "dir/escape"
+        return infos
+
+    monkeypatch.setattr(zipfile.ZipFile, "infolist", windows_names)
+    dest = tmp_path / "out"
+    dest.mkdir()
+    with pytest.raises(AppError, match="GPP-406"):
+        safe_extract(archive, dest)
+    assert not list(dest.iterdir())
+
+
+def test_valid_nested_zip_still_extracts(tmp_path):
+    archive = tmp_path / "valid.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("folder/", b"")
+        z.writestr("folder/nested/file.txt", b"valid content")
+    dest = tmp_path / "out"
+    dest.mkdir()
+    safe_extract(archive, dest)
+    assert (dest / "folder/nested/file.txt").read_bytes() == b"valid content"
 
 
 def test_zip_symlink_escape_rejected(tmp_path):

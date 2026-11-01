@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock
 from photorestore import macos
+from photorestore.errors import AppError
+import photorestore.service as service_module
 from playwright.sync_api import sync_playwright
 from photorestore.app import build_html
 from photorestore.service import Service
@@ -89,22 +91,66 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
     )
     assert destination.exists() and "session.recovered" in destination.read_text("utf-8-sig")
 
+    # Mail handoff is mocked: exercise the real UI/ZIP export without opening mail.
+    composer = Mock(return_value={"opened": True, "attachment_requested": True, "method": "test-native"})
+    service_module.open_report_draft = composer
+    destination = root / "incident.zip"
+    service.dialog = lambda *args: str(destination)
+    page.get_by_role("button", name="Send report", exact=True).click()
+    page.get_by_role("button", name="Not now", exact=True).click()
+    composer.assert_not_called()
+    page.get_by_role("button", name="Send report", exact=True).click()
+    page.get_by_role("button", name="Save report & open email", exact=True).click()
+    page.get_by_role("heading", name="Review your email draft", exact=True).wait_for()
+    assert destination.exists() and "0.2.0" in composer.call_args.args[0]
+    assert "sarthakg043@gmail.com" in page.locator("#modal-content").inner_text()
+    page.locator("#modal-ok").click()
+    page.get_by_role("button", name="Help", exact=True).click()
+    page.get_by_role("button", name="Read the full usage guide", exact=True).click()
+    assert "Keep that Chrome window open" in page.locator("#modal-content").inner_text()
+    page.locator("#modal-ok").click()
+    incident = service.capture_incident("GPP-402", "test_google", AppError("GPP-402"))
+    page.evaluate("() => refresh()")
+    page.get_by_role("heading", name="The app encountered a problem", exact=True).wait_for()
+    assert "GPP-402" in page.locator("#incident-description").inner_text()
+    page.get_by_role("button", name="Not now", exact=True).click()
+    page.wait_for_function("() => !document.querySelector('#incident-modal').open")
+    page.wait_for_timeout(100)
+    assert service.pending_incident is None
+    composer.assert_called_once()
+    page.locator('#notice [data-action="dismiss"]').click()
+
     # Exercise wrap constraints with the same unbroken details that broke the native UI.
     with service.store.connect() as con:
-        service.store.audit(con, service.session.user_id, "operation." + "long_event_" * 20,
-                            {"diagnostic": "a" * 1200, "path": "/folder/" + "very-long-name" * 80})
+        service.store.audit(
+            con,
+            service.session.user_id,
+            "operation." + "long_event_" * 20,
+            {"diagnostic": "a" * 1200, "path": "/folder/" + "very-long-name" * 80},
+        )
     for width in (820, 960, 1180, 1580):
         page.set_viewport_size({"width": width, "height": 620})
-        for name in ("Dashboard", "Setup", "Queue", "History & reports", "Settings", "Accounts", "Logs & diagnostics", "Help"):
+        for name in (
+            "Dashboard",
+            "Setup",
+            "Queue",
+            "History & reports",
+            "Settings",
+            "Accounts",
+            "Logs & diagnostics",
+            "Help",
+        ):
             page.get_by_role("button", name=name, exact=True).click()
             page.wait_for_timeout(70)
-            dimensions = page.evaluate("({width:document.documentElement.clientWidth, scroll:document.documentElement.scrollWidth})")
+            dimensions = page.evaluate(
+                "({width:document.documentElement.clientWidth, scroll:document.documentElement.scrollWidth})"
+            )
             assert dimensions["scroll"] <= dimensions["width"], (width, name, dimensions)
         page.get_by_role("button", name="Logs & diagnostics", exact=True).click()
         assert page.locator(".audit-detail").first.evaluate("el=>el.scrollWidth<=el.clientWidth")
         if width == 820:
             page.screenshot(path="docs/screenshots/logs-narrow.png", full_page=True)
-    page.set_viewport_size({"width":1280,"height":900})
+    page.set_viewport_size({"width": 1280, "height": 900})
 
     page.get_by_role("button", name="Dashboard", exact=True).click()
     page.get_by_role("heading", name="Bring your memories home.").wait_for()
@@ -115,6 +161,8 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
         awaiting_google_confirmation=True,
     )
     page.evaluate("() => refresh()")
+    assert "Keep Chrome open" in page.locator("#content").inner_text()
+    assert "Leave that Chrome window open" in page.locator("#content").inner_text()
     assert not service.signin_ready.is_set()
     page.get_by_role("button", name="I’ve signed in — Continue", exact=True).click()
     assert service.signin_ready.wait(5)
@@ -154,5 +202,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as pw:
     assert key_file.exists()  # An explicitly exported recovery file is outside app cleanup.
 
     assert not errors, errors
-    print("UI smoke passed: all screens at 820–1580px, recovery/export/reset, role isolation and confirmed temporary-data cleanup.")
+    print(
+        "UI smoke passed: all screens at 820–1580px, recovery/export/reset, role isolation, usage guide, incident prompts/ZIP/draft handoff and confirmed temporary-data cleanup."
+    )
     browser.close()

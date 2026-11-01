@@ -4,6 +4,9 @@ import hmac
 import hashlib
 import json
 import secrets
+import re
+import zipfile
+import tempfile
 import shutil
 import sqlite3
 import threading
@@ -22,6 +25,8 @@ from .settings import Settings
 from .store import Store, canonical, now
 from . import macos
 from .maintenance import clear_owned_data, close_logs
+from .support import REPORTABLE_CODES, SUPPORT_EMAIL, new_incident, public_incident, write_incident_bundle
+from .maildraft import open_report_draft
 
 
 class Service:
@@ -48,8 +53,13 @@ class Service:
         self.window = None
         self.uninstalled = False
         self.maintenance_failed = False
+        self.incident_cache = {}
+        self.pending_incident = None
+        self.incident_dedupe = {}
 
     def call(self, action, params=None, token=None):
+        if not isinstance(action, str) or len(action) > 64:
+            return {"ok": False, "error": AppError("GPP-101").public()}
         params = params or {}
         if not isinstance(params, dict) or len(canonical(params)) > 100000:
             return {"ok": False, "error": AppError("GPP-101").public()}
@@ -58,15 +68,147 @@ class Service:
                 result = self.dispatch(action, params, token)
             return {"ok": True, "data": result}
         except AppError as exc:
-            return {"ok": False, "error": exc.public()}
+            return self.failure(exc.code, action, exc)
         except sqlite3.Error as exc:
             if self.logger:
                 log_event(self.logger, "database.error", "GPP-501", exc)
-            return {"ok": False, "error": AppError("GPP-501").public()}
+            return self.failure("GPP-501", action, exc)
         except Exception as exc:
             if self.logger:
                 log_event(self.logger, "application.error", "GPP-901", exc)
-            return {"ok": False, "error": AppError("GPP-901").public()}
+            return self.failure("GPP-901", action, exc)
+
+    def failure(self, code, action, exc):
+        error = AppError(code).public()
+        if action != "send_report" and code in REPORTABLE_CODES:
+            incident = self.capture_incident(code, action, exc)
+            error["incident"] = public_incident(incident)
+        return {"ok": False, "error": error}
+
+    def capture_incident(self, code, operation, exc=None, run_id=None):
+        with self.mutex:
+            key = (code, operation, run_id)
+            recent = self.incident_dedupe.get(key)
+            if recent and time.monotonic() - recent[0] < 300 and recent[1] in self.incident_cache:
+                return self.incident_cache[recent[1]]
+            incident = new_incident(code, operation, exc, run_id)
+            self.incident_dedupe[key] = (time.monotonic(), incident["id"])
+            if len(self.incident_dedupe) > 50:
+                self.incident_dedupe.pop(next(iter(self.incident_dedupe)))
+            self.incident_cache[incident["id"]] = incident
+            self.pending_incident = incident
+            if len(self.incident_cache) > 50:
+                self.incident_cache.pop(next(iter(self.incident_cache)))
+            if self.store:
+                try:
+                    with self.store.connect() as con:
+                        con.execute(
+                            "INSERT INTO incidents(id,created,code,operation,run_id,detail) VALUES(?,?,?,?,?,?)",
+                            (
+                                incident["id"],
+                                incident["created"],
+                                code,
+                                incident["operation"],
+                                incident["run_id"],
+                                canonical(incident["detail"]),
+                            ),
+                        )
+                        con.execute(
+                            "DELETE FROM incidents WHERE id NOT IN (SELECT id FROM incidents ORDER BY created DESC LIMIT 50)"
+                        )
+                        self.store.audit(
+                            con,
+                            self.session.user_id,
+                            "incident.created",
+                            {"incident": incident["id"], "code": code},
+                        )
+                except (sqlite3.Error, OSError):
+                    pass  # Keep an in-memory incident even if the database is the failure.
+        return incident
+
+    def find_incident(self, incident_id=None):
+        if incident_id is not None and (
+            not isinstance(incident_id, str) or not re.fullmatch(r"[a-f0-9]{32}", incident_id)
+        ):
+            raise AppError("GPP-101")
+        if incident_id in self.incident_cache:
+            return self.incident_cache[incident_id]
+        if self.store:
+            try:
+                with self.store.connect() as con:
+                    row = con.execute(
+                        "SELECT * FROM incidents WHERE id=?"
+                        if incident_id
+                        else "SELECT * FROM incidents ORDER BY created DESC LIMIT 1",
+                        (incident_id,) if incident_id else (),
+                    ).fetchone()
+                if row:
+                    return {k: row[k] for k in ("id", "created", "code", "operation", "run_id")} | {
+                        "detail": json.loads(row["detail"])
+                    }
+            except (sqlite3.Error, ValueError):
+                pass
+        if incident_id:
+            raise AppError("GPP-101")
+        return self.pending_incident or new_incident()
+
+    def send_report(self, p):
+        self.require_idle()
+        if p.get("consent") is not True:
+            raise AppError("GPP-101")
+        incident = self.find_incident(p.get("incident_id"))
+        self.incident_cache[incident["id"]] = incident
+        path = self.dialog("save", f"takeout-incident-{incident['id'][:12]}.zip")
+        if not path:
+            return {"cancelled": True}
+        destination = Path(path)
+        if (
+            destination.suffix.lower() != ".zip"
+            or destination.resolve().is_relative_to(self.root.resolve())
+            or destination.is_symlink()
+        ):
+            raise AppError("GPP-101")
+        if self.selected_source and destination.resolve().is_relative_to(
+            Path(self.selected_source).resolve()
+        ):
+            raise AppError("GPP-113")
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                dir=destination.parent, prefix=".takeout-report-", suffix=".zip", delete=False
+            ) as output:
+                temporary = Path(output.name)
+            draft = write_incident_bundle(temporary, incident, self.store, self.profile)
+            temporary.replace(destination)
+            draft["body"] = draft["body"].replace(temporary.name, destination.name)
+        except (OSError, zipfile.BadZipFile) as exc:
+            raise AppError("GPP-113") from exc
+        finally:
+            if temporary:
+                temporary.unlink(missing_ok=True)
+        handoff = open_report_draft(draft["subject"], draft["body"], destination)
+        if self.store:
+            try:
+                with self.store.connect() as con:
+                    self.store.audit(
+                        con,
+                        self.session.user_id,
+                        "support.draft_requested",
+                        {
+                            "incident": incident["id"],
+                            "code": incident["code"],
+                            "report_sha256": draft["sha256"],
+                            "method": handoff["method"],
+                        },
+                    )
+            except sqlite3.Error:
+                pass
+        return {
+            **handoff,
+            "path": str(destination),
+            "recipient": SUPPORT_EMAIL,
+            "incident_id": incident["id"],
+        }
 
     def require_idle(self):
         if self.thread and self.thread.is_alive():
@@ -91,18 +233,42 @@ class Service:
             self.last_activity = time.monotonic()
 
     def dispatch(self, action, p, token):
-        if self.uninstalled or self.maintenance_failed:
+        if self.uninstalled or (
+            self.maintenance_failed and action not in ("send_report", "acknowledge_incident", "bootstrap")
+        ):
             raise AppError("GPP-111")
+        if self.maintenance_failed and action == "bootstrap":
+            return {
+                "startup_error": AppError("GPP-111").public(),
+                "incident": public_incident(self.pending_incident),
+            }
+        if action == "usage_guide":
+            guide = Path(__file__).parent / "resources/USAGE.md"
+            if not guide.is_file():
+                guide = Path(__file__).parent.parent / "USAGE.md"
+            return guide.read_text(encoding="utf-8")
         if action == "bootstrap":
             return {
                 "has_accounts": self.accounts.exists(),
                 "can_start_over": macos.device_verification_available(),
+                "incident": public_incident(self.pending_incident)
+                if not self.session and self.pending_incident
+                else None,
             }
         if action == "recover_password":
             self.require_idle()
             if self.session:
                 raise AppError("GPP-106")
             self.accounts.recover_password(p.get("username"), p.get("recovery_key"), p.get("password"))
+            return None
+        # Before sign-in only a fresh incident from this process can be reported.
+        if action in ("send_report", "acknowledge_incident") and not self.session:
+            incident_id = p.get("incident_id")
+            if not isinstance(incident_id, str) or incident_id not in self.incident_cache:
+                raise AppError("GPP-102")
+            if action == "send_report":
+                return self.send_report(p)
+            self.pending_incident = None
             return None
         if action in ("clear_data", "uninstall"):
             return self.maintenance(action, p, token)
@@ -132,12 +298,42 @@ class Service:
             self.settings = Settings.parse(json.loads(saved[0])) if saved else Settings()
             self.selected_source = source[0] if source else None
             self.job = {"active": False, "phase": "Ready", "count": 0, "error": None}
+            self.incident_cache = {}
+            self.incident_dedupe = {}
+            with store.connect() as con:
+                pending = con.execute(
+                    "SELECT id FROM incidents WHERE acknowledged=0 ORDER BY created DESC LIMIT 1"
+                ).fetchone()
+            self.pending_incident = self.find_incident(pending[0]) if pending else None
             return {
                 "token": self.token,
                 "user": self.user_info(),
                 "recovery_key": self.accounts.issue_recovery(session),
             }
-        self.authenticate(token, action)
+        try:
+            self.authenticate(token, action)
+        except sqlite3.Error:
+            # A signed-in user can still report database damage with the existing token.
+            if (
+                action not in ("send_report", "acknowledge_incident")
+                or not self.session
+                or not isinstance(token, str)
+                or not hmac.compare_digest(self.token, token)
+                or time.monotonic() - self.last_activity > self.settings.auto_lock_minutes * 60
+            ):
+                raise
+        if action == "send_report":
+            return self.send_report(p)
+        if action == "acknowledge_incident":
+            incident = self.find_incident(p.get("incident_id"))
+            try:
+                with self.store.connect() as con:
+                    con.execute("UPDATE incidents SET acknowledged=1 WHERE id=?", (incident["id"],))
+            except sqlite3.Error:
+                pass
+            if self.pending_incident and self.pending_incident["id"] == incident["id"]:
+                self.pending_incident = None
+            return None
         if action == "activity":
             return None
         if action == "status":
@@ -157,6 +353,7 @@ class Service:
                 "google_connected": (self.profile / "google.session").exists()
                 and (self.profile / "chrome.profile.enc").exists(),
                 "google_bound": bound,
+                "incident": public_incident(self.pending_incident) if self.pending_incident else None,
             }
         if action == "logout":
             self.require_idle()
@@ -385,6 +582,9 @@ class Service:
         if self.profile:
             close_logs(self.profile)
         self.session = self.token = self.store = self.profile = self.selected_source = self.logger = None
+        self.incident_cache = {}
+        self.pending_incident = None
+        self.incident_dedupe = {}
 
     def queue(self, p):
         status = p.get("status", "")
@@ -537,6 +737,8 @@ class Service:
                 count = self.job["count"]
                 self.job["error"] = AppError(code).public()
                 failure = log_event(logger, "operation.error", code, exc)
+                if code in REPORTABLE_CODES:
+                    self.capture_incident(code, action, exc, run_id)
             finally:
                 try:
                     with store.connect() as con:
@@ -559,6 +761,7 @@ class Service:
                 except Exception as exc:
                     log_event(logger, "operation.commit_error", "GPP-501", exc)
                     self.job["error"] = AppError("GPP-501").public()
+                    self.capture_incident("GPP-501", action, exc, run_id)
                 self.job.update(
                     active=False,
                     outcome=status,
@@ -583,3 +786,43 @@ class Service:
             webview.FileDialog.FOLDER if kind == "folder" else webview.FileDialog.SAVE, save_filename=filename
         )
         return result[0] if isinstance(result, (list, tuple)) and result else result
+
+
+class StartupSupport:
+    """Minimal report bridge when the account store cannot be opened. No user-data access."""
+
+    require_idle = Service.require_idle
+    find_incident = Service.find_incident
+    send_report = Service.send_report
+    dialog = Service.dialog
+
+    def __init__(self, root, code, exc):
+        self.root = root
+        self.store = self.profile = self.session = self.thread = self.window = self.selected_source = None
+        incident = new_incident(code, "startup", exc)
+        self.incident_cache = {incident["id"]: incident}
+        self.incident = incident
+        self.pending_incident = incident
+
+    def call(self, action, params=None, token=None):
+        p = params or {}
+        if not isinstance(p, dict):
+            return {"ok": False, "error": AppError("GPP-101").public()}
+        try:
+            if action == "bootstrap":
+                result = {
+                    "startup_error": AppError(self.incident["code"]).public(),
+                    "incident": public_incident(self.incident),
+                }
+            elif (
+                action in ("send_report", "acknowledge_incident")
+                and p.get("incident_id") == self.incident["id"]
+            ):
+                result = self.send_report(p) if action == "send_report" else None
+            else:
+                raise AppError("GPP-102")
+            return {"ok": True, "data": result}
+        except AppError as exc:
+            return {"ok": False, "error": exc.public()}
+        except Exception:
+            return {"ok": False, "error": AppError("GPP-901").public()}

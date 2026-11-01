@@ -26,7 +26,12 @@ let token = null,
   activityTime = 0,
   renderVersion = 0,
   recoveryKey = null,
-  canStartOver = false;
+  canStartOver = false,
+  pendingIncident = null,
+  reportIncidentId = null,
+  lastShownIncident = null,
+  startupIncidentId = null,
+  reportBusy = false;
 const titles = {
   dashboard: "Dashboard",
   setup: "Setup",
@@ -77,6 +82,7 @@ async function api(action, params = {}) {
       await authScreen();
     }
     notice(`${r.error.code} · ${r.error.title}`, r.error.message, true);
+    if (r.error.incident) queueIncident(r.error.incident);
     throw new Error(r.error.code);
   }
   return r.data;
@@ -107,10 +113,40 @@ function details(title, data) {
 async function authScreen() {
   renderVersion++;
   const b = await window.pywebview.api.request("bootstrap", {}, null);
+  if (b.data.startup_error) {
+    startupIncidentId = b.data.incident.id;
+    $("#app").innerHTML = `<div class="auth-page"><div class="auth-card"><h1>Unable to open your workspace</h1><p><strong>${esc(b.data.startup_error.code + " · " + b.data.startup_error.title)}</strong></p><p>${esc(b.data.startup_error.message)}</p><p>Preserve your app data and any backups. You can save a private technical report and open an email draft for support.</p>${actionButton("send-report", "Send report")}</div></div>`;
+    if (["GPP-111", "GPP-303", "GPP-402", "GPP-403", "GPP-406", "GPP-408", "GPP-414", "GPP-501", "GPP-502", "GPP-901"].includes(b.data.incident.code)) queueIncident(b.data.incident);
+    return;
+  }
   const first = !b.data.has_accounts;
+  if (b.data.incident) queueIncident(b.data.incident);
   canStartOver = b.data.can_start_over;
   $("#app").innerHTML =
     `<div class="auth-page"><div class="auth-card"><div class="brand"><div class="mark">↑</div>Takeout Restore</div><h1>${first ? "A fresh start for your memories." : "Welcome back."}</h1><p>${first ? "Create your local administrator account to get started." : "Sign in to your local account to continue your restore."}</p><form id="auth-form" data-register="${first}"><div class="field"><label for="username">Username</label><input id="username" name="username" autocomplete="username" minlength="3" maxlength="48" required autofocus></div><div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="${first ? "new-password" : "current-password"}" ${first ? 'minlength="12"' : ""} maxlength="256" required>${first ? "<small>At least 12 characters. A memorable passphrase works well.</small>" : ""}</div><button type="submit">${first ? "Create account" : "Sign in"}</button></form>${!first ? `<div class="actions mt18">${actionButton("forgot-password", "Forgot password?", true)}${canStartOver ? actionButton("start-over", "Start over on this Mac", true) : ""}</div>` : ""}<p class="auth-footer">This is your local app account. You’ll sign in to Google separately in a Google browser window. Your Google password never enters this app.</p></div></div>`;
+}
+function queueIncident(incident) {
+  if (incident.id === lastShownIncident) return;
+  pendingIncident = incident;
+  setTimeout(showPendingIncident, 0);
+}
+function showPendingIncident() {
+  if (!pendingIncident || formBusy || reportBusy || state?.job.active || document.querySelector("dialog[open]")) return;
+  openIncidentDialog(pendingIncident);
+  pendingIncident = null;
+}
+function openIncidentDialog(incident = null) {
+  reportIncidentId = incident?.id || startupIncidentId || null;
+  if (incident) lastShownIncident = incident.id;
+  $("#incident-title").textContent = incident ? "The app encountered a problem" : "Send an incident report";
+  $("#incident-description").textContent = incident ? `${incident.code} · ${incident.title}. ${incident.message} You can report this unexpected outcome to help us investigate. Its root cause has not been established.` : "Report an issue with the app. The latest recorded incident will be included when one is available. Add what you were doing and what you expected in the email draft.";
+  $("#incident-modal").showModal();
+}
+async function closeIncident() {
+  $("#incident-modal").close();
+  const id = reportIncidentId;
+  reportIncidentId = null;
+  if (id) await api("acknowledge_incident", {incident_id:id});
 }
 function showRecovery(code) {
   if (!code) return;
@@ -147,7 +183,7 @@ function shell() {
       )
       .join(
         "",
-      )}</nav><div class="sidebar-bottom"><label class="inline tiny"><input id="advanced-toggle" type="checkbox" ${state.settings.advanced ? "checked" : ""} ${state.job.active ? "disabled" : ""}>Advanced view</label><div class="profile-card"><div class="avatar">${esc(u.username.slice(0, 2).toUpperCase())}</div><div><div class="profile-name tiny">${esc(u.username)}</div><span class="muted tiny">${u.role === "admin" ? "Administrator" : "Standard account"}</span></div></div><button class="quiet tiny" data-action="logout" ${state.job.active ? "disabled" : ""}>Lock & sign out</button></div></aside><main class="main"><div class="topline"><span>Workspace / ${titles[page]}</span><span class="local"><span class="dot"></span>Local & private</span></div><section id="content"></section><footer class="footer"><span>Takeout Restore · Preview 0.1.5</span><span>Your originals stay untouched</span></footer></main></div>`;
+      )}</nav><div class="sidebar-bottom"><label class="inline tiny"><input id="advanced-toggle" type="checkbox" ${state.settings.advanced ? "checked" : ""} ${state.job.active ? "disabled" : ""}>Advanced view</label><div class="profile-card"><div class="avatar">${esc(u.username.slice(0, 2).toUpperCase())}</div><div><div class="profile-name tiny">${esc(u.username)}</div><span class="muted tiny">${u.role === "admin" ? "Administrator" : "Standard account"}</span></div></div><button class="quiet tiny" data-action="logout" ${state.job.active ? "disabled" : ""}>Lock & sign out</button></div></aside><main class="main"><div class="topline"><span>Workspace / ${titles[page]}</span><span class="local"><span class="dot"></span>Local & private</span></div><section id="content"></section><footer class="footer"><span>Takeout Restore · Preview 0.2.0</span><span>Your originals stay untouched</span></footer></main></div>`;
 }
 function header(title, subtitle, actions = "") {
   return `<header class="pagehead"><div><h1>${title}</h1><p>${subtitle}</p></div><div class="actions">${actions}</div></header>`;
@@ -160,7 +196,7 @@ const actionButton = (action, label, secondary = false, disabled = false) =>
 function jobCard() {
   const j = state.job;
   return j.active
-    ? `<div class="card"><div class="job"><strong>${esc(j.phase)}</strong>${j.awaiting_google_confirmation ? actionButton("confirm_google", "I’ve signed in — Continue") : ""}${actionButton("pause", "Pause safely", true)}</div><div class="progress" role="progressbar" aria-label="Operation in progress"></div><p class="tiny muted">${j.phase === "Downloading browser" ? `${j.count}% downloaded` : `${number(j.count)} items processed in this operation`} · Pausing finishes the current submitted upload.</p></div>`
+    ? `<div class="card"><div class="job"><strong>${esc(j.phase)}</strong>${j.awaiting_google_confirmation ? actionButton("confirm_google", "I’ve signed in — Continue") : ""}${actionButton("pause", "Pause safely", true)}</div>${j.awaiting_google_confirmation ? '<div class="banner mt16"><strong>Keep Chrome open</strong>Finish signing in until Google Photos is visible. Leave that Chrome window open, switch back to Takeout Restore, then click “I’ve signed in — Continue” above. Wait for the app to finish the connection.</div>' : ""}<div class="progress" role="progressbar" aria-label="Operation in progress"></div><p class="tiny muted">${j.phase === "Downloading browser" ? `${j.count}% downloaded` : `${number(j.count)} items processed in this operation`} · Pausing finishes the current submitted upload.</p></div>`
     : j.outcome === "needs_review" && !j.error
       ? `<div class="banner"><strong>Review required</strong>${number(j.processed_count)} uploads confirmed in this run. Unresolved items remain in Queue; finishing an operation does not confirm those uploads.</div>`
     : j.error
@@ -234,7 +270,7 @@ function setup() {
       ],
       [
         "Connect to Google Photos",
-        "Sign in manually in the dedicated Chrome window. When Google Photos opens, click “I’ve signed in — Continue” in this app. The app then attaches using the original pipeline’s CDP flow.",
+        "Sign in in the Chrome window that opens. Wait until you can see Google Photos. Keep that Chrome window open, return to Takeout Restore, then click “I’ve signed in — Continue”. The app will close the dedicated browser when the connection finishes.",
         "connect_google",
         state.google_connected ? "Reconnect" : "Open Chrome sign-in",
         !state.browser_ready,
@@ -433,6 +469,7 @@ async function logs() {
       "Understand what happened.",
       "A traceable local audit trail, with clear error codes and private diagnostics.",
       actionButton("logs_csv", "Export logs as CSV", true, state.job.active) +
+      actionButton("send-report", "Send report", true, state.job.active) +
       (state.settings.advanced
         ? actionButton("diagnostics", "Export diagnostics", true, state.job.active)
         : ""),
@@ -445,8 +482,9 @@ function help() {
     header(
       "A little guidance.",
       "A careful workflow for irreplaceable photos.",
+      actionButton("usage-guide", "Read the full usage guide", true),
     ) +
-    `<div class="card"><h2>Your first restore</h2><ol class="help-list"><li>Keep an independent backup of your Takeout export. Extract all ZIP parts into a folder before scanning.</li><li>Create your local account, choose the folder in Setup, and scan. Review rejected files and metadata errors.</li><li>Install the verified browser component, sign in to Google, and run the connection check.</li><li>Start with a small sample. Confirm dates, locations, video playback and counts directly in Google Photos.</li><li>Start the full queue. Keep the computer awake, the source drive connected and Google storage available.</li><li>Afterwards, export your report and resolve items marked Needs review or Restore details.</li></ol></div><div class="grid2"><div class="card"><h2>If something stops</h2><p class="muted">Reconnect an unplugged drive and rescan. If Google’s controls changed, stop and update the app. If the upload result is unknown, check Google Photos before retrying.</p><p class="muted">Enable Advanced view for item details, retry controls, manual verification and a redacted diagnostic bundle.</p></div><div class="card"><h2>What this preview cannot promise</h2><p class="muted">Exactly-once upload, existing-cloud duplicate detection, every media format, native Live Photo pairing, album recreation, favorite/archive state or Google caption restoration.</p><p class="muted">No telemetry. Browser downloads contact the browser vendor; sign-in and upload contact Google and its supporting services. This is an independent tool, not a Google product.</p></div></div>`
+    `<div class="card"><h2>Your first restore</h2><ol class="help-list"><li>Keep an independent backup of your Takeout export. Extract all ZIP parts into a folder before scanning.</li><li>Create your local account, choose the folder in Setup, and scan. Review rejected files and metadata errors.</li><li>Install the browser component if needed. Sign in in the dedicated Chrome window, keep it open, switch back to this app, then click “I’ve signed in — Continue”. Wait for connection to finish, then run the connection check.</li><li>Start with a small sample. Confirm dates, locations, video playback and counts directly in Google Photos.</li><li>Start the full queue. Keep the computer awake, the source drive connected and Google storage available.</li><li>Afterwards, export your report and resolve items marked Needs review or Restore details.</li></ol></div><div class="grid2"><div class="card"><h2>If something stops</h2><p class="muted">Reconnect an unplugged drive and rescan. If Google’s controls changed, stop and update the app. If the upload result is unknown, check Google Photos before retrying.</p><p class="muted">Enable Advanced view for item details, retry controls, manual verification and a redacted diagnostic bundle.</p></div><div class="card"><h2>What this preview cannot promise</h2><p class="muted">Exactly-once upload, existing-cloud duplicate detection, every media format, native Live Photo pairing, album recreation, favorite/archive state or Google caption restoration.</p><p class="muted">No telemetry. Browser downloads contact the browser vendor; sign-in and upload contact Google and its supporting services. This is an independent tool, not a Google product.</p></div></div>`
   );
 }
 async function render() {
@@ -472,8 +510,57 @@ async function refresh(renderPage = true) {
   if (!token) return;
   state = await api("status");
   if (renderPage) await render();
+  if (state.incident) queueIncident(state.incident);
+}
+function renderUsage(text) {
+  const lines = text.split("\n"), html = [];
+  let list = null;
+  const inline = value => esc(value).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`(.+?)`/g, "<code>$1</code>");
+  const close = () => { if (list) { html.push(`</${list}>`); list = null; } };
+  for (const line of lines) {
+    const heading = line.match(/^(#{1,3}) (.+)$/), item = line.match(/^(?:[-*] |\d+\. )(.+)$/);
+    if (item) {
+      const tag = /^\d/.test(line) ? "ol" : "ul";
+      if (list !== tag) { close(); html.push(`<${tag}>`); list = tag; }
+      html.push(`<li>${inline(item[1])}</li>`);
+    } else {
+      close();
+      if (heading) html.push(`<h${Math.min(heading[1].length + 1, 3)}>${inline(heading[2])}</h${Math.min(heading[1].length + 1, 3)}>`);
+      else if (line.trim()) html.push(`<p>${inline(line)}</p>`);
+    }
+  }
+  close();
+  return `<div class="usage-guide">${html.join("")}</div>`;
 }
 async function onAction(a) {
+  if (a === "usage-guide") {
+    const text = await api("usage_guide");
+    $("#modal-title").textContent = "Takeout Restore usage guide";
+    $("#modal-content").innerHTML = renderUsage(text);
+    $("#modal-ok").textContent = "Close";
+    $("#modal").showModal();
+    return;
+  }
+  if (a === "send-report") return openIncidentDialog(state?.incident || null);
+  if (a === "dismiss-incident") return closeIncident();
+  if (a === "compose-report") {
+    if (reportBusy) return;
+    reportBusy = true;
+    const button = document.querySelector('[data-action="compose-report"]');
+    button.disabled = true;
+    try {
+      const result = await api("send_report", {incident_id:reportIncidentId, consent:true});
+      if (result.cancelled) return;
+      reportIncidentId = result.incident_id;
+      await closeIncident();
+      await confirmAction(result.opened ? "Review your email draft" : "Report saved — email app unavailable",
+        `${result.attachment_requested ? "An email draft with the diagnostic ZIP was requested. Check the attachment before sending." : "Attach the saved ZIP to your email manually."} Saved report: ${result.path}. Recipient: ${result.recipient}. ${result.opened ? "Add what happened and review everything, then press Send in your mail app when ready." : "Open your email app, address a message to this recipient, and attach the ZIP. Technical details are also inside report.txt in the ZIP."}`, "Done");
+    } finally {
+      reportBusy = false;
+      button.disabled = false;
+    }
+    return;
+  }
   if (a === "save-recovery") {
     if (await api("save_recovery", {recovery_key: recoveryKey})) notice("Recovery key saved", "Keep this file somewhere private.");
     return;
@@ -705,6 +792,7 @@ document.addEventListener("submit", async (e) => {
   } finally {
     formBusy = false;
     if (b) b.disabled = false;
+    showPendingIncident();
   }
 });
 for (const event of ["pointerdown", "keydown"])
@@ -715,7 +803,7 @@ for (const event of ["pointerdown", "keydown"])
     }
   });
 setInterval(async () => {
-  if (!token || pollBusy || formBusy || ($("#modal").open || $("#recovery-modal").open)) return;
+  if (!token || pollBusy || formBusy || document.querySelector("dialog[open]")) return;
   pollBusy = true;
   try {
     const previous = state?.job.active;
@@ -730,8 +818,10 @@ setInterval(async () => {
   } catch (_) {
   } finally {
     pollBusy = false;
+    showPendingIncident();
   }
 }, 3000);
+$("#incident-modal").addEventListener("cancel", event => { event.preventDefault(); closeIncident().catch(() => {}); });
 window.addEventListener("pywebviewready", () =>
   authScreen().catch(() =>
     notice("Unable to start", "Restart the application.", true),

@@ -1,6 +1,8 @@
 """Recovery and destructive actions use disposable data and mocked OS boundaries."""
 
 import json
+import os
+import stat
 from unittest.mock import Mock
 import pytest
 from cryptography.fernet import Fernet
@@ -103,7 +105,13 @@ def test_public_recovery_and_recovery_export_are_scoped(tmp_path):
     assert service.call("save_recovery", {"recovery_key": code}, "wrong")["error"]["code"] == "GPP-102"
     assert service.call("save_recovery", {"recovery_key": "wrong"}, token)["error"]["code"] == "GPP-109"
     assert service.call("save_recovery", {"recovery_key": code}, token)["ok"]
-    assert code in destination.read_text() and destination.stat().st_mode & 0o777 == 0o600
+    assert code in destination.read_text(encoding="utf-8")
+    if os.name == "posix":
+        assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+    else:
+        # Windows chmod controls read-only status, not Unix owner/group permissions.
+        assert destination.stat().st_mode & stat.S_IREAD
+        assert destination.stat().st_mode & stat.S_IWRITE
     assert (
         service.call("recover_password", {"username": "Alice", "recovery_key": code, "password": NEW})[
             "error"

@@ -728,3 +728,6 @@ pre {
 .mt20 {
   margin-top: 20px;
 }
+
+.usage-guide h3 { margin-top: 22px; }
+.usage-guide li { margin: 8px 0; }

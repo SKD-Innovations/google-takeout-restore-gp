@@ -184,3 +184,24 @@ privately. Accounts can issue a replacement after checking the current password.
 verification. See [macOS installation/removal](docs/MACOS-INSTALLATION.md) and
 [security model](SECURITY.md) for scope and limitations. Existing data is migrated;
 installing the update does not erase your accounts or upload history.
+
+
+## Version 0.2.0: usage and incident reports
+
+Start with [the non-technical usage guide](USAGE.md), also available through Help →
+Read the full usage guide in the app. Setup and the sign-in waiting screen explicitly
+say to keep the dedicated Chrome window open, return to Takeout Restore, and click
+**I’ve signed in — Continue** after Google Photos is visible.
+
+Logs now has **Send report** next to **Export logs as CSV**. Unexpected app/component/
+website outcomes can offer an incident dialog. The user reviews the disclosure, saves
+a redacted ZIP, and opens a prefilled email draft to `sarthakg043@gmail.com`. macOS uses
+the native compose-email sharing service with the ZIP; the portable mailto fallback
+requires manual attachment. No email is sent automatically. The report includes version,
+a source/dependency build fingerprint, installed launcher SHA-256, incident details and
+summary counts, excluding media, source filenames/paths, credentials and raw databases.
+
+[Apple release instructions](docs/APPLE-RELEASE.md) cover tests, Developer ID signing,
+notarization/stapling, secure CI and the separate Mac App Store readiness work. This
+browser-downloading, unsandboxed preview is **not ready for Mac App Store submission**;
+notarizing its DMG does not grant App Store acceptance.

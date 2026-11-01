@@ -8,6 +8,7 @@ files = [
     root / name
     for name in (
         "README.md",
+        "USAGE.md",
         "SECURITY.md",
         "LICENSE",
         "NOTICE",

@@ -44,7 +44,7 @@ class Store:
         con = sqlite3.connect(self.path)
         try:
             con.execute("PRAGMA journal_mode=WAL")
-            version = 1 if profile else 2
+            version = 2
             if con.execute("PRAGMA user_version").fetchone()[0] > version:
                 raise AppError("GPP-503")
             common = """
@@ -83,6 +83,10 @@ class Store:
               CREATE TABLE IF NOT EXISTS sidecars (
                 path TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT, data TEXT, invalid INTEGER NOT NULL);
               CREATE INDEX IF NOT EXISTS sidecar_title ON sidecars(directory,title);
+              CREATE TABLE IF NOT EXISTS incidents (
+                id TEXT PRIMARY KEY, created TEXT NOT NULL, code TEXT,
+                operation TEXT NOT NULL, run_id TEXT, detail TEXT NOT NULL,
+                acknowledged INTEGER NOT NULL DEFAULT 0);
             """
             )
             con.executescript(common + schema)

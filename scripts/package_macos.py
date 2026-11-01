@@ -1,6 +1,7 @@
 """Build a designed Finder installation image and a portable app archive."""
 
 import argparse
+import os
 import platform
 import plistlib
 import subprocess
@@ -53,6 +54,9 @@ dmgbuild.build_dmg(
         "include_list_view_settings": False,
     },
 )
+# The app's nested code is signed by PyInstaller; sign the outer distribution too.
+if identity := os.environ.get("MAC_SIGN_IDENTITY"):
+    subprocess.run(["codesign", "--force", "--timestamp", "--sign", identity, str(output)], check=True)
 # Verify the distributed copy too: Finder attributes added during packaging can
 # invalidate a signature even when the original .app passed verification.
 with tempfile.TemporaryDirectory(prefix="dmg-verify-", dir=dist) as tmp:

@@ -101,3 +101,9 @@ The macOS spec also compiles `packaging/AuthorizeReset.swift` with Xcode's `swif
 LocalAuthentication framework; there is no downloaded recovery/authentication service.
 The compiler cache is kept under `build/swift-module-cache`. Validate interactive
 device authentication and uninstall on a disposable macOS user/account before release.
+
+
+Version 0.2.0's spec also bundles the root USAGE.md and generates resources/build.json
+using scripts/build_identity.py. The generated fingerprint contains only allowlisted
+source/dependency inputs and target metadata, never local account data or secrets.
+See APPLE-RELEASE.md for the full Apple distribution procedure and App Store blockers.

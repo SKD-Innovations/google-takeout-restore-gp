@@ -2,6 +2,7 @@
 import os
 import sys
 import subprocess
+import shutil
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
@@ -9,6 +10,8 @@ root = Path(SPECPATH).parent
 resources = root / 'photorestore' / 'resources'
 if not (resources / 'browser.json').exists() or not (resources / 'exiftool.json').exists():
     raise RuntimeError('Prepare verified browser manifest and bundled ExifTool before building.')
+shutil.copyfile(root / 'USAGE.md', resources / 'USAGE.md')
+subprocess.run([sys.executable, str(root / 'scripts/build_identity.py')], check=True)
 datas = [(str(root / 'photorestore' / 'ui'), 'photorestore/ui'),
          (str(resources), 'photorestore/resources'),
          (str(root / 'LICENSE'), 'licenses'), (str(root / 'NOTICE'), 'licenses')]
@@ -50,7 +53,7 @@ if sys.platform == 'darwin':
                              'LSApplicationCategoryType':'public.app-category.photography',
                              'CFBundleSupportedPlatforms':['MacOSX'],
                              'NSHumanReadableCopyright':'Copyright 2026 Takeout Restore contributors',
-                             'CFBundleShortVersionString':'0.1.5', 'CFBundleVersion':'0.1.5', 'LSMinimumSystemVersion':'13.0',
+                             'CFBundleShortVersionString':'0.2.0', 'CFBundleVersion':'0.2.0', 'LSMinimumSystemVersion':'13.0',
                              'NSHighResolutionCapable':True,
                              'NSDocumentsFolderUsageDescription':'Choose extracted Takeout folders for restoration.',
                              'NSRemovableVolumesUsageDescription':'Read Takeout exports on external drives.'})

@@ -141,3 +141,57 @@ retry. On Windows/Linux app data can be cleared here and the platform package ma
 removes the installed application. No resident cleanup helper, Finder monitor, root
 script, launch agent or login item is installed. Dragging a closed app to Bin alone
 cannot run app code and therefore does not invoke this cleanup.
+
+
+## Optional incident email reports (0.2.0)
+
+There is no app email sender, SMTP credential, automatic telemetry or automatic report
+upload. A reportable unexpected error records a private per-profile incident and may
+show a dialog. Routine authentication/configuration/source errors do not trigger that
+dialog. Reportability is a practical error-code classification, not a determination of
+user fault or a proven root cause. A process crash or force-quit may prevent a dialog;
+manual Send report remains available after restarting.
+
+Creating a report requires explicit consent, an idle worker and a native Save dialog.
+The backend selects the report identity and fixed recipient, never a frontend email
+address or arbitrary attachment path. Exports must be ZIPs outside the app data and
+selected source folders; symlink destinations are rejected. A temporary file is
+atomically renamed over the user-chosen destination after generation. Cancelling Save
+never invokes mail composition. Reports are explicit exports and survive app cleanup.
+
+The bundle contains an incident ID/time, version/build fingerprint, installed launcher
+SHA-256 when packaged, OS/architecture, safe code locations/exception classes, summary
+counts and audit head when available. Raw logs are not copied: recent event fields are
+strictly filtered. Source paths, media filenames, photo hashes, usernames, Google
+identity, credentials, recovery keys, session archives, screenshots, raw databases,
+exception messages, locals and environment variables are excluded. The observed error
+and its catalogue explanation are distinguished from an unconfirmed root cause.
+
+The source/dependency fingerprint is generated during packaging from allowlisted code,
+UI, build input and component-manifest files. It is not a whole installed-bundle hash,
+signature-validation result or DMG hash. The runtime launcher SHA-256 identifies only
+that executable. The ZIP's SHA-256 is computed after writing and put in the email draft.
+Public release artifact hashes are generated separately after signing/notarization.
+
+NSSharingService's composeEmail service is used on the macOS main thread with a local
+file URL attachment, fixed recipient and generated subject/body. It hands off for user
+review; the app does not claim delivery. The fallback opens a percent-encoded mailto
+URI with subject/body only, and clearly asks the user to attach the saved ZIP. If no
+handler is available, the ZIP remains and the UI gives manual reporting instructions.
+The user's email client/network/provider and sender identity are outside the app's
+no-telemetry boundary once the user chooses to open/send a draft.
+
+Profile schema version 2 adds bounded incident records; migration preserves existing
+items, account keys and audit chains. Incidents remain isolated by profile and are
+cleared from memory at logout. Repeated identical incidents are deduplicated for five
+minutes and the popup can be acknowledged. A current authenticated user can report
+database damage using their existing unexpired session token even if the account DB
+cannot be read; no new login or administrative action is authorized by that fallback.
+Before login/startup, only an unpredictable current-process incident capability can
+request a report, and no profile database/history is included. Damaged-database reports
+remain useful by omitting unavailable database aggregates. Exports and native draft
+handoff do not require Advanced view.
+
+The support mailbox owner must establish appropriate retention/deletion and privacy
+practices before publishing. User-initiated support email is optional but still needs
+accurate privacy disclosures for the distribution channel.

@@ -25,6 +25,10 @@ CATALOG = {
         "Uninstall unavailable",
         "Run the installed app from Applications to uninstall it. On Windows or Linux, clear app data here, then use your operating system’s app manager.",
     ),
+    "GPP-113": (
+        "Report could not be saved",
+        "Choose a writable location with free space and try again. Nothing was emailed.",
+    ),
     "GPP-201": ("Source unavailable", "Reconnect the source drive and check that the folder is readable."),
     "GPP-202": (
         "Source changed",
