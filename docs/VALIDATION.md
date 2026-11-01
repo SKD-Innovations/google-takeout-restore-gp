@@ -193,3 +193,9 @@ Ruff, JavaScript syntax, whitespace checks and actionlint passed. The real UI/se
 smoke passed all screens at 820–1580px, recovery/export/reset, role isolation, usage,
 incident prompts, ZIP/draft handoff and disposable-data cleanup. Screenshots were
 regenerated from the 0.2.1 interface.
+
+
+The first four-target 0.2.1 package run passed Windows, Apple Silicon macOS and Linux.
+Its Intel macOS packaged self-test caught an OpenSSL symbol collision at startup.
+The release stayed a draft. The Intel build now explicitly requests static OpenSSL
+linkage for cryptography; its packaged self-test remains mandatory.

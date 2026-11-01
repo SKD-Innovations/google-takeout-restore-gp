@@ -109,3 +109,10 @@ The 0.2.1 spec also bundles the root USAGE.md and generates resources/build.json
 using scripts/build_identity.py. The generated fingerprint contains only allowlisted
 source/dependency inputs and target metadata, never local account data or secrets.
 See APPLE-RELEASE.md for the full Apple distribution procedure and App Store blockers.
+
+
+On Intel macOS, the package workflow builds cryptography from source with
+`OPENSSL_STATIC=1` and Homebrew's `openssl@3` prefix. This keeps its OpenSSL symbols
+inside the extension instead of colliding with the Python runtime's bundled dynamic
+OpenSSL libraries. The packaged native self-test must pass before artifact upload.
+See [cryptography's build instructions](https://cryptography.io/en/latest/installation/#building-cryptography-on-macos).
